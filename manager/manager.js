@@ -805,7 +805,11 @@ function init() {
 
     el("btnExportCsv").addEventListener("click", exportCsvOnly);
 
-  // Tabs
+    // Tabs
+  el("tabWaiver").addEventListener("click", () => {
+    window.location.href = "../";
+  });
+
   el("tabHistory").addEventListener("click", () => setSalesTab(false));
   el("tabSales").addEventListener("click", () => setSalesTab(true));
   el("tabHint").textContent = "History view";
@@ -850,5 +854,6 @@ el("btnBackToList").addEventListener("click", () => showModal("detailModal", fal
 }
 
 init();
+
 
 
