@@ -423,8 +423,31 @@ function renderSales() {
   const day = (el("salesDay")?.value || "").trim();
   const month = (el("salesMonth")?.value || "").trim();
 
-    let rows = cachedRows.slice();
+  const from = (el("salesFrom")?.value || "").trim();
+  const to = (el("salesTo")?.value || "").trim();
 
+  let rows = cachedRows.slice();
+
+  // Range filter (YYYY-MM-DD strings compare correctly)
+  if (from || to) {
+    let start = from || "0000-01-01";
+    let end = to || "9999-12-31";
+
+    // If user accidentally selects reversed range, swap it
+    if (start && end && start > end) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
+
+    rows = rows.filter(r => {
+      const d = String(r.date || "").trim();
+      if (!d) return false;
+      return d >= start && d <= end;
+    });
+  }
+
+  // Existing filters still work (they further narrow the result)
   if (year) rows = rows.filter(r => String(r.date || "").slice(0, 4) === year);
   if (day) rows = rows.filter(r => String(r.date || "") === day);
   if (!day && month) rows = rows.filter(r => String(r.date || "").slice(0, 7) === month);
@@ -789,10 +812,12 @@ function init() {
 
   // Sales filters
   el("btnSalesApply").addEventListener("click", renderSales);
-    el("btnSalesClear").addEventListener("click", () => {
+      el("btnSalesClear").addEventListener("click", () => {
     el("salesYear").value = "";
     el("salesDay").value = "";
     el("salesMonth").value = "";
+    if (el("salesFrom")) el("salesFrom").value = "";
+    if (el("salesTo")) el("salesTo").value = "";
     renderSales();
   });
 
@@ -825,3 +850,4 @@ el("btnBackToList").addEventListener("click", () => showModal("detailModal", fal
 }
 
 init();
+
