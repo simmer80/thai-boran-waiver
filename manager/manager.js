@@ -851,3 +851,4 @@ el("btnBackToList").addEventListener("click", () => showModal("detailModal", fal
 
 init();
 
+
