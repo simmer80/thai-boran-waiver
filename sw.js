@@ -1,10 +1,15 @@
-const CACHE_NAME = 'thai-boran-waiver-v1';
+const CACHE_NAME = 'thai-boran-waiver-v2';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.json',
+
+  './manager/',
+  './manager/index.html',
+  './manager/manager.js',
+
   './assets/thai_boran_logo.png',
   './assets/oval_frame.png',
   './icons/icon-192.png',
