@@ -222,6 +222,80 @@ function toUint8(a) {
 let cachedRows = [];
 let selected = null;
 
+const SALES_ARCHIVE_KEY = "thai_boran_sales_archive_v1";
+
+function loadSalesArchive() {
+  try {
+    const raw = localStorage.getItem(SALES_ARCHIVE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSalesArchive(arr) {
+  localStorage.setItem(SALES_ARCHIVE_KEY, JSON.stringify(arr || []));
+}
+
+function getAllSalesRows() {
+  // Merge archive + current records (current records win if same id)
+  const archive = loadSalesArchive();
+  const map = new Map();
+
+  for (const r of archive) {
+    const k = String(r.id || r.timestamp || "");
+    if (k) map.set(k, r);
+  }
+
+  for (const r of cachedRows) {
+    const k = String(r.id || r.timestamp || "");
+    if (k) map.set(k, r);
+  }
+
+  return Array.from(map.values());
+}
+
+function calcSalesForAnyRow(r) {
+  // Archived rows keep frozen totals
+  if (r && typeof r._sale_total === "number") {
+    return {
+      servicePrice: Number(r._sale_servicePrice || 0) || 0,
+      addonsPrice: Number(r._sale_addonsPrice || 0) || 0,
+      total: Number(r._sale_total || 0) || 0
+    };
+  }
+  return calcSalesForRecord(r);
+}
+
+function archiveCurrentSalesSnapshot() {
+  const archive = loadSalesArchive();
+  const map = new Map();
+
+  // Load existing archive
+  for (const r of archive) {
+    const k = String(r.id || r.timestamp || "");
+    if (k) map.set(k, r);
+  }
+
+  // Add current rows with frozen totals
+  for (const r of cachedRows) {
+    const k = String(r.id || r.timestamp || "");
+    if (!k) continue;
+
+    const s = calcSalesForRecord(r);
+
+    map.set(k, {
+      ...r,
+      _sale_servicePrice: s.servicePrice,
+      _sale_addonsPrice: s.addonsPrice,
+      _sale_total: s.total
+    });
+  }
+
+  saveSalesArchive(Array.from(map.values()));
+}
+
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -229,7 +303,10 @@ function todayYmd() {
 function parseAddonsList(addonsText) {
   const t = String(addonsText || "").trim();
   if (!t || t.toLowerCase() === "none") return [];
-  return t.split(",").map(s => s.trim()).filter(Boolean);
+
+  // Waiver stores add-ons like: "Ventosa; Scented Oil; Half Hour"
+  // Also support commas just in case.
+  return t.split(/[;,]/).map(s => s.trim()).filter(Boolean);
 }
 
 function loadPriceSets() {
@@ -426,7 +503,7 @@ function renderSales() {
   const from = (el("salesFrom")?.value || "").trim();
   const to = (el("salesTo")?.value || "").trim();
 
-  let rows = cachedRows.slice();
+  let rows = getAllSalesRows();
 
   // Range filter (YYYY-MM-DD strings compare correctly)
   if (from || to) {
@@ -458,7 +535,7 @@ function renderSales() {
   let total = 0;
 
   for (const r of rows) {
-    const s = calcSalesForRecord(r);
+    const s = calcSalesForAnyRow(r);
     total += s.total;
 
     const tr = document.createElement("tr");
@@ -477,7 +554,7 @@ function renderSales() {
     el("salesTotal").textContent = String(total);
   el("salesCount").textContent = String(rows.length);
 
-        renderMonthlyChartFromAllRows(cachedRows, year);
+        renderMonthlyChartFromAllRows(getAllSalesRows(), year);
 }
 
 function updateSalesYearList() {
@@ -486,10 +563,10 @@ function updateSalesYearList() {
 
   const years = new Set();
 
-  for (const r of cachedRows) {
-    const y = String(r.date || "").slice(0, 4);
-    if (/^\d{4}$/.test(y)) years.add(y);
-  }
+  for (const r of getAllSalesRows()) {
+  const y = String(r.date || "").slice(0, 4);
+  if (/^\d{4}$/.test(y)) years.add(y);
+}
 
   const sortedYears = [...years].sort((a, b) => Number(b) - Number(a));
 
@@ -867,11 +944,15 @@ function init() {
   });
 
   el("btnClearAll").addEventListener("click", async () => {
-    if (!confirm("Clear all saved submissions on this iPad?")) return;
-    await dbClear();
-    await loadRows();
-    alert("Saved data cleared");
-  });
+  if (!confirm("Clear all saved submissions on this iPad?")) return;
+
+  // Keep a permanent sales snapshot before deleting records
+  archiveCurrentSalesSnapshot();
+
+  await dbClear();
+  await loadRows();
+  alert("Saved data cleared");
+});
 
   el("btnCloseDetail").addEventListener("click", () => showModal("detailModal", false));
 el("btnPrintDetail").addEventListener("click", () => {
@@ -881,6 +962,7 @@ el("btnBackToList").addEventListener("click", () => showModal("detailModal", fal
 }
 
 init();
+
 
 
 
