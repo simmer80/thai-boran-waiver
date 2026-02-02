@@ -23,8 +23,8 @@
     .pinRow { display: flex; gap: 10px; align-items: center; }
     .pinRow input { font-size: 22px; letter-spacing: 6px; text-align: center; }
 
-    /* Sales filters: force equal sizing (iPad Safari overrides otherwise) */
-    #salesYear, #salesMonth, #salesDay {
+        /* Sales filters: force equal sizing (iPad Safari overrides otherwise) */
+    #salesYear, #salesMonth, #salesDay, #salesFrom, #salesTo {
       width: 220px !important;
       box-sizing: border-box !important;
     }
@@ -152,25 +152,38 @@
 
           <div class="hr" style="margin-top:12px;"></div>
 
-                                        <div class="row" style="gap:10px; flex-wrap: wrap; align-items: end; margin-top:10px;">
-            
-<div class="salesFilter">
-  <div class="small">Filter by year</div>
-  <select id="salesYear"></select>
+          <div class="row" style="gap:10px; flex-wrap: wrap; align-items: end; margin-top:10px;">
+
+  <div class="salesFilter">
+    <div class="small">Filter by year</div>
+    <select id="salesYear"></select>
+  </div>
+
+  <div class="salesFilter">
+    <div class="small">Filter by month</div>
+    <input id="salesMonth" type="month" />
+  </div>
+
+  <div class="salesFilter">
+    <div class="small">Filter by day</div>
+    <input id="salesDay" type="date" />
+  </div>
+
+  <div class="salesFilter">
+    <div class="small">From</div>
+    <input id="salesFrom" type="date" />
+  </div>
+
+  <div class="salesFilter">
+    <div class="small">To</div>
+    <input id="salesTo" type="date" />
+  </div>
+
+  <div class="row" style="gap:10px; flex-wrap: wrap;">
+    <button id="btnSalesApply" class="btn" type="button">Apply</button>
+    <button id="btnSalesClear" class="btn" type="button">Clear</button>
+  </div>
 </div>
-            <div class="salesFilter">
-              <div class="small">Filter by month</div>
-              <input id="salesMonth" type="month" />
-            </div>
-            <div class="salesFilter">
-              <div class="small">Filter by day</div>
-              <input id="salesDay" type="date" />
-            </div>
-            <div class="row" style="gap:10px; flex-wrap: wrap;">
-              <button id="btnSalesApply" class="btn" type="button">Apply</button>
-              <button id="btnSalesClear" class="btn" type="button">Clear</button>
-            </div>
-          </div>
 
           <div class="row" style="gap:20px; flex-wrap: wrap; margin-top:12px;">
             <div class="card" style="padding:12px; min-width: 220px;">
@@ -293,3 +306,4 @@
   </script>
 </body>
 </html>
+
