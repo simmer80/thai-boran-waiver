@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="../styles.css" />
+  <title>Thai Boran Manager</title>
+
+  <style>
+    .tableWrap { margin-top: 12px; overflow: auto; }
+    .wideTable { min-width: 1800px; }
+
+    /* Sales price table: small fixed box */
+    .priceWrap { max-height: 260px; overflow: auto; }
+    .tapHint { font-size: 12px; opacity: 0.85; margin-top: 6px; }
+    .kv { width: 100%; border-collapse: collapse; }
+    .kv td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.15); vertical-align: top; }
+    .imgBox img { width: 100%; max-height: 420px; object-fit: contain; background: #fff; border-radius: 12px; }
+    .twoCol { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 900px) { .twoCol { grid-template-columns: 1fr 1fr; } }
+    .pinRow { display: flex; gap: 10px; align-items: center; }
+    .pinRow input { font-size: 22px; letter-spacing: 6px; text-align: center; }
+
+    /* Sales filters: force equal sizing (iPad Safari overrides otherwise) */
+    #salesYear, #salesMonth, #salesDay {
+      width: 220px !important;
+      box-sizing: border-box !important;
+    }
+
+.hidden { display: none !important; }
+#detailModal .modal-head{
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: inherit;
+}
+#detailModal .modal-body{
+  max-height: 75vh;
+  overflow: auto;
+}
+@media print {
+  body {
+    background: #fff;
+  }
+
+  /* Hide everything */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show only the submission detail modal */
+  #detailModal,
+  #detailModal * {
+    visibility: visible !important;
+  }
+
+  /* Remove modal positioning and shadows */
+  #detailModal {
+    position: static !important;
+  }
+
+  .modal-card {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
+
+/* Sales filters: keep year, month, day exactly same width */
+.salesFilter { width: 240px; }
+.salesFilter input { width: 100%; box-sizing: border-box; }
+
+  </style>
+</head>
+
+<body>
+  <main>
+    <div id="offlineHint" class="notice hidden"></div>
+
+    <div id="pinCard" class="card">
+      <div class="section">
+        <div class="center bigtitle">Thai Boran Manager</div>
+        <div class="tapHint center">Enter PIN to access history and export</div>
+
+        <div style="margin-top:12px;" class="pinRow">
+          <input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" />
+          <button id="btnUnlock" class="btn primary" type="button">Unlock</button>
+        </div>
+
+        <div id="pinMsg" class="small" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <div id="mgrCard" class="card hidden">
+            <div class="section">
+
+        <div class="row" style="justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+          <div class="row" style="gap:10px; flex-wrap: wrap;">
+            <button id="tabHistory" class="btn primary" type="button">History</button>
+            <button id="tabSales" class="btn" type="button">Sales</button>
+          </div>
+          <div class="small" id="tabHint"></div>
+        </div>
+
+        <div id="viewHistory">
+          <div class="row" style="justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+          <div>
+            <div class="small">Records</div>
+            <div>History, export, clear</div>
+            <div class="tapHint">Tap a row to open full details, photo and signature</div>
+          </div>
+          <div class="row" style="flex-wrap: wrap;">
+            <button id="btnExportCsv" class="btn" type="button">Export CSV</button>
+            <button id="btnClearAll" class="btn danger" type="button">Clear Saved Data</button>
+          </div>
+        </div>
+
+        <div class="tableWrap">
+          <table class="table wideTable">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Name</th>
+                <th>Date</th>
+                <th>Address</th>
+                <th>Contact</th>
+                <th>Services</th>
+                <th>Add-Ons</th>
+                <th>Therapist</th>
+                <th>Time Start</th>
+                <th>Conditions</th>
+                <th>Signature File</th>
+                <th>Photo File</th>
+              </tr>
+            </thead>
+            <tbody id="historyRows"></tbody>
+          </table>
+        </div>
+
+                <div id="mgrMsg" class="small" style="margin-top:10px;"></div>
+        </div>
+
+        <div id="viewSales" class="hidden">
+          <div class="row" style="justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+            <div>
+              <div class="small">Sales</div>
+              <div>Totals, filters, chart, price control</div>
+              <div class="tapHint">Sales are calculated using the price set effective on the waiver date</div>
+            </div>
+          </div>
+
+          <div class="hr" style="margin-top:12px;"></div>
+
+                                        <div class="row" style="gap:10px; flex-wrap: wrap; align-items: end; margin-top:10px;">
+            
+<div class="salesFilter">
+  <div class="small">Filter by year</div>
+  <select id="salesYear"></select>
+</div>
+            <div class="salesFilter">
+              <div class="small">Filter by month</div>
+              <input id="salesMonth" type="month" />
+            </div>
+            <div class="salesFilter">
+              <div class="small">Filter by day</div>
+              <input id="salesDay" type="date" />
+            </div>
+            <div class="row" style="gap:10px; flex-wrap: wrap;">
+              <button id="btnSalesApply" class="btn" type="button">Apply</button>
+              <button id="btnSalesClear" class="btn" type="button">Clear</button>
+            </div>
+          </div>
+
+          <div class="row" style="gap:20px; flex-wrap: wrap; margin-top:12px;">
+            <div class="card" style="padding:12px; min-width: 220px;">
+              <div class="small">Total sales</div>
+              <div id="salesTotal" style="font-size: 22px;">0</div>
+            </div>
+            <div class="card" style="padding:12px; min-width: 220px;">
+              <div class="small">Records in filter</div>
+              <div id="salesCount" style="font-size: 22px;">0</div>
+            </div>
+          </div>
+
+          <div class="hr" style="margin-top:12px;"></div>
+
+          <div style="margin-top:10px;">
+            <div class="row" style="justify-content: space-between; gap:10px; flex-wrap: wrap;">
+              <div>
+                <div class="small">Price control</div>
+                <div id="priceStatus" class="tapHint"></div>
+              </div>
+              <div class="row" style="gap:10px; flex-wrap: wrap;">
+                <button id="btnPricesEdit" class="btn" type="button">Edit Prices</button>
+                <button id="btnPricesSaveLock" class="btn primary" type="button">Save and Lock</button>
+              </div>
+            </div>
+
+                        <div class="tableWrap priceWrap" style="margin-top:10px;">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Type</th>
+                    <th>Price</th>
+                  </tr>
+                </thead>
+                <tbody id="priceRows"></tbody>
+              </table>
+            </div>
+
+            <div class="tapHint" style="margin-top:8px;">
+              When you Save and Lock, a new price set starts today and is used for all new waivers from today onward.
+            </div>
+          </div>
+
+          <div class="hr" style="margin-top:12px;"></div>
+
+          <div style="margin-top:10px;">
+            <div class="small">Monthly sales chart</div>
+            <canvas id="salesChart" width="900" height="280" style="width:100%; background:#fff; border-radius: 12px;"></canvas>
+          </div>
+
+          <div class="tableWrap" style="margin-top:12px;">
+            <table class="table wideTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Name</th>
+                  <th>Service</th>
+                  <th>Add-Ons</th>
+                  <th>Service Price</th>
+                  <th>Add-Ons Price</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody id="salesRows"></tbody>
+            </table>
+          </div>
+
+          <div id="salesMsg" class="small" style="margin-top:10px;"></div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <div id="detailModal" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+  <div>Submission details</div>
+  <div class="row" style="gap:10px;">
+  <button id="btnPrintDetail" class="btn" type="button">Print</button>
+  <button id="btnCloseDetail" class="btn" type="button">Back</button>
+</div>
+</div>
+      <div class="modal-body">
+        <div class="twoCol">
+          <div>
+            <table class="kv">
+              <tbody id="detailKv"></tbody>
+            </table>
+          </div>
+
+          <div>
+            <div class="imgBox">
+              <div class="small" style="margin-bottom:6px;">Photo</div>
+              <img id="detailPhoto" alt="Photo" />
+            </div>
+
+            <div class="imgBox" style="margin-top:12px;">
+              <div class="small" style="margin-bottom:6px;">Signature</div>
+              <img id="detailSig" alt="Signature" />
+            </div>
+
+            <div class="row" style="margin-top:12px; gap: 10px; flex-wrap: wrap;">
+              <button id="btnDownloadPhoto" class="btn" type="button">Download Photo</button>
+              <button id="btnDownloadSig" class="btn" type="button">Download Signature</button>
+              <button id="btnExportZipOne" class="btn" type="button">Export This Record (ZIP)</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./manager.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js");
+    }
+  </script>
+</body>
+</html>

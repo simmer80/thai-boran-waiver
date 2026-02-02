@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>Thai Boran Waiver</title>
+<style>
+@media print {
+  body {
+    background: #fff;
+  }
+
+  /* Hide buttons and UI-only elements */
+  .btn,
+  .modal,
+  #offlineHint {
+    display: none !important;
+  }
+
+  /* Remove card shadows/borders for clean paper print */
+  .card {
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Ensure photo and signature are printed */
+  #photoPreviewBox,
+  .sig-wrap {
+    display: block !important;
+  }
+}
+/* Add dropdown arrow for read-only pseudo-selects (Add-Ons) */
+.select-wrap {
+  position: relative;
+}
+
+.select-arrow {
+  position: absolute;
+  right: 12px;
+  top: 34px;
+  width: 10px;
+  height: 14px;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.select-arrow::before,
+.select-arrow::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+
+.select-arrow::before {
+  top: 0;
+  border-bottom: 6px solid #aaa;
+}
+
+.select-arrow::after {
+  bottom: 0;
+  border-top: 6px solid #aaa;
+}
+
+/* Mandatory fields visual cue */
+.required-field {
+  background-color: #f0f0f0;
+}
+
+/* Keep disabled submit visually consistent */
+.required-field:focus {
+  background-color: #eaeaea;
+}
+</style>
+</head>
+<body>
+  <main>
+    <div id="offlineHint" class="notice hidden"></div>
+
+    <div class="card">
+      <div class="section">
+        <div class="android-header">
+          <img src="./assets/thai_boran_logo.png" alt="Thai Boran" />
+          <div class="branch">
+            <div class="title">Airport Road Branch</div>
+            <div class="addr">Door 209, 2nd Flr. LDL Bldg. Purok 9,
+Brgy. Communal, Buhangin District, Davao City
+(Fronting Davao International Airport)
+Contact Nos.: 0929 838 4111 - 0995 130 1543</div>
+          </div>
+        </div>
+
+        <div class="center hours">Operating Hours:
+Monday to Friday &amp; Holidays
+1:00pm - 1:00am</div>
+        <div class="center bigtitle">GENERAL LIABILITY WAIVER AND DISCLOSURE FORM
+(MASSAGE THERAPY SERVICES)</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section">
+      <div class="grid">
+        <div>
+          <label for="name">Name</label>
+          <input id="name" type="text" autocomplete="name" class="required-field" />
+        </div>
+        <div>
+          <label for="date">Date</label>
+          <input id="date" type="date" class="required-field" />
+        </div>
+
+        <div>
+          <label for="address">Address</label>
+          <input id="address" type="text" autocomplete="street-address" />
+        </div>
+        <div>
+          <label for="contact">Contact Phone</label>
+          <input id="contact" type="tel" autocomplete="tel" class="required-field" />
+          <div class="small">Saved as text in CSV</div>
+        </div>
+
+                <div>
+          <label for="services">Services</label>
+          <select id="services"></select>
+        </div>
+
+        <div>
+  <label for="addons">Add-Ons</label>
+  <select id="addons">
+    <option value="None">None</option>
+  </select>
+  <div class="small">Tap to select</div>
+</div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div>
+        <div class="center" style="font-weight:700; font-size:16px; margin-bottom:10px;">By signing below, I hereby DECLARE, UNDERSTAND, and AGREE to the following:</div>
+        <div style="font-weight:700; font-size:16px; margin-bottom:8px;">1. I am or I have: (place a check sign on the applicable condition)</div>
+        <div class="checks">
+          <label class="check"><input id="c_pregnant" type="checkbox" /> Pregnant</label>
+          <label class="check"><input id="c_thinners" type="checkbox" /> Taking blood thinning medication(s)</label>
+          <label class="check"><input id="c_skin" type="checkbox" /> Suffering from broken, irritated, or inflamed skin condition</label>
+          <label class="check"><input id="c_bp" type="checkbox" /> Suffering from high blood or low blood pressure</label>
+          <label class="check"><input id="c_pre" type="checkbox" /> Prior or existing medical conditions that may be aggravated by having massage therapy</label>
+          <label class="check"><input id="c_other" type="checkbox" /> Other medical conditions</label>
+        </div>
+        <div style="margin-top:10px;">
+          <label for="other_text">If other, specify</label>
+          <input id="other_text" type="text" />
+        </div>
+
+        <div class="hr"></div>
+
+        <div id="waiverBlock" style="font-size:14px; line-height:1.35;"></div>
+      </div>
+      </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section">
+            <div class="notice" style="margin-bottom:12px;">
+        <div style="font-weight:700; margin-bottom:6px;">Privacy Notice</div>
+        <div style="font-size:13px; line-height:1.35;">
+          This waiver requires a photo for identification and liability purposes related to massage services. Your photo, signature, and form information are stored securely on this device only, are accessible only by authorized management, and are not shared with any third party. The information is retained solely for legal and record-keeping purposes and handled in accordance with applicable Philippine data privacy regulations.
+        </div>
+
+        <label class="check" style="margin-top:10px;">
+          <input id="consentPrivacy" type="checkbox" />
+          <span>I have read and understood the Privacy Notice and consent to the collection and storage of my photo and personal data.</span>
+        </label>
+
+        <div class="small" style="margin-top:6px;">You must accept the Privacy Notice before taking a photo.</div>
+      </div>
+
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <div class="small">Step 1</div>
+          <div>Take photo</div>
+        </div>
+        <button id="btnTakePhoto" class="btn primary" type="button" disabled>Take a Photo</button>
+<input
+  id="photoInput"
+  type="file"
+  accept="image/*"
+  capture="user"
+  style="display:none"
+/>
+      </div>
+
+      <div class="row" style="margin-top:12px; gap: 16px;">
+        <div class="preview hidden" id="photoPreviewBox"><img id="photoPreview" alt="Photo preview" /></div>
+        <div id="photoStatus" class="small">No photo taken yet</div>
+      </div>
+
+            <div class="hr"></div>
+
+      <div class="grid" style="margin-top:10px;">
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <div class="small">Step 2</div>
+          <div>Signature</div>
+        </div>
+        <div class="row">
+          <button id="btnClearSig" class="btn" type="button">Clear Signature</button>
+        </div>
+      </div>
+
+      <div class="sig-wrap" style="margin-top:10px;">
+        <canvas id="sig" class="sig-canvas"></canvas>
+      </div>
+      <div class="small" style="margin-top:8px;">Signature is enabled only after a photo is taken</div>
+
+            </div>
+
+      <div class="hr"></div>
+
+      <div class="grid" style="margin-top:10px;">
+        <div>
+          <label for="therapist">Therapist</label>
+          <input id="therapist" type="text" class="required-field" />
+        </div>
+
+        <div>
+          <label for="timestart">Time Start</label>
+          <input id="timestart" type="time" class="required-field" />
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="row" style="justify-content: space-between;">
+  <div class="row" style="gap:10px; flex-wrap: wrap;">
+    <button id="btnSubmit" class="btn primary" type="button" disabled>Submit</button>
+    <button id="btnPrintWaiver" class="btn" type="button">Print</button>
+    <button id="btnEditRecords" class="btn" type="button">Edit Records</button>
+  </div>
+  <button id="btnReset" class="btn danger" type="button">Reset Form</button>
+</div>
+
+      <div id="submitMsg" class="small" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="modalAddons" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>Select Add-Ons</div>
+        <button id="btnCloseAddons" class="btn" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <div id="addonsList" class="checks"></div>
+        <div class="hr"></div>
+        <div class="row" style="justify-content:flex-end;">
+          <button id="btnOkAddons" class="btn primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalCam" class="modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>Face capture</div>
+        <button id="btnCloseCam" class="btn" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="video-wrap">
+          <video id="video" playsinline autoplay></video>
+          <div class="oval-overlay"><img src="./assets/oval_frame.png" alt="Oval" /></div>
+        </div>
+        <div class="row" style="margin-top:12px; justify-content: space-between;">
+          <button id="btnSnap" class="btn primary" type="button">Use This Photo</button>
+          <button id="btnSwitchCam" class="btn" type="button">Switch Camera</button>
+        </div>
+        <canvas id="snapCanvas" class="hidden"></canvas>
+      </div>
+    </div>
+  </div>
+
+<div id="modalEditPin" class="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>Edit Records</div>
+      <button id="btnCloseEditPin" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-body">
+      <div class="small">Enter PIN to access saved records</div>
+      <div class="hr" style="margin-top:10px;"></div>
+
+      <div class="grid" style="margin-top:10px;">
+        <div>
+          <label for="editPin">PIN</label>
+          <input id="editPin" type="password" inputmode="numeric" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end; gap:10px; margin-top:12px;">
+        <button id="btnEditPinOk" class="btn primary" type="button">OK</button>
+      </div>
+
+      <div id="editPinMsg" class="small" style="margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modalEditRecords" class="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>Saved records</div>
+      <button id="btnCloseEditRecords" class="btn" type="button">Back</button>
+    </div>
+    <div class="modal-body">
+      <div class="small">Tap a row to add extra add-ons</div>
+      <div class="hr" style="margin-top:10px;"></div>
+
+      <div class="tableWrap">
+        <table class="table wideTable">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Name</th>
+              <th>Date</th>
+              <th>Service</th>
+              <th>Add-Ons</th>
+            </tr>
+          </thead>
+          <tbody id="editRows"></tbody>
+        </table>
+      </div>
+
+      <div id="editRecordsMsg" class="small" style="margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modalEditDetail" class="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>Add extra add-ons</div>
+      <div class="row" style="gap:10px;">
+        <button id="btnEditDetailSave" class="btn primary" type="button">Save</button>
+        <button id="btnEditDetailClose" class="btn" type="button">Back</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="small" id="editDetailTitle"></div>
+      <div class="hr" style="margin-top:10px;"></div>
+
+      <div class="small">Existing add-ons are locked. You can only add new ones.</div>
+      <div class="hr" style="margin-top:10px;"></div>
+
+      <div id="editAddonsList" class="checks"></div>
+
+      <div id="editDetailMsg" class="small" style="margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+
+  <script src="./app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+</body>
+</html>
