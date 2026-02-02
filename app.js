@@ -1075,6 +1075,27 @@ async function init() {
   setupAddons();
   setupSignature();
   setupEvents();
+  // Prevent horizontal swipe navigation (iPad PWA safety)
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener('touchstart', e => {
+  if (!e.touches || e.touches.length !== 1) return;
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  if (!e.touches || e.touches.length !== 1) return;
+
+  const dx = Math.abs(e.touches[0].clientX - touchStartX);
+  const dy = Math.abs(e.touches[0].clientY - touchStartY);
+
+  // If horizontal movement dominates, block it
+  if (dx > dy && dx > 10) {
+    e.preventDefault();
+  }
+}, { passive: false });
   setupOfflineHint();
 
   el('date').value = todayISO();
