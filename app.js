@@ -1075,33 +1075,39 @@ async function init() {
   setupAddons();
   setupSignature();
   setupEvents();
-  // Prevent horizontal swipe navigation (iPad PWA safety)
+  // Prevent iPad edge-swipe navigation (back/forward) while keeping vertical scroll
 let touchStartX = 0;
 let touchStartY = 0;
+let edgeSwipe = false;
 
 document.addEventListener('touchstart', e => {
   if (!e.touches || e.touches.length !== 1) return;
+
   touchStartX = e.touches[0].clientX;
   touchStartY = e.touches[0].clientY;
+
+  const w = window.innerWidth || 0;
+  const EDGE = 28; // px from the edge where iPad back/forward swipes start
+
+  edgeSwipe = (touchStartX <= EDGE) || (touchStartX >= (w - EDGE));
 }, { passive: true });
 
 document.addEventListener('touchmove', e => {
   if (!e.touches || e.touches.length !== 1) return;
 
-  // Do not block gestures that start on form controls
-  const t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
-    return;
-  }
-
   const dx = Math.abs(e.touches[0].clientX - touchStartX);
   const dy = Math.abs(e.touches[0].clientY - touchStartY);
 
-  // If horizontal movement dominates, block it
-  if (dx > dy && dx > 10) {
+  // Only intervene when a gesture starts at the screen edge and is horizontal-dominant
+  if (edgeSwipe && dx > dy && dx > 6) {
     e.preventDefault();
   }
 }, { passive: false });
+
+document.addEventListener('touchend', () => {
+  edgeSwipe = false;
+}, { passive: true });
+  
   setupOfflineHint();
 
   el('date').value = todayISO();
