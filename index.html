@@ -9,12 +9,16 @@
   <title>Thai Boran Waiver</title>
 <style>
 @media print {
-  body {
+  html, body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
+body {
   background: #fff;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
-  overscroll-behavior-x: none;
+  touch-action: pan-y;
 }
 
   /* Hide buttons and UI-only elements */
