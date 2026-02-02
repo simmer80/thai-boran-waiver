@@ -817,7 +817,15 @@ function resetForm(clearPhotoAndSig) {
   el('services').selectedIndex = 0;
 
   state.addonsChecked.fill(false);
-  el('addons').value = 'None';
+
+// Restore the <select> to a single visible option: "None"
+const a = el('addons');
+a.innerHTML = '';
+const opt = document.createElement('option');
+opt.value = 'None';
+opt.textContent = 'None';
+a.appendChild(opt);
+a.value = 'None';
 
   el('c_pregnant').checked = false;
   el('c_thinners').checked = false;
@@ -888,9 +896,19 @@ function setupAddons() {
   input.addEventListener('click', open);
   el('btnCloseAddons').addEventListener('click', () => modal.classList.remove('show'));
   el('btnOkAddons').addEventListener('click', () => {
-    el('addons').value = selectedAddonsText();
-    modal.classList.remove('show');
-  });
+  const txt = selectedAddonsText();
+
+  // The add-ons field is a <select> with only "None" by default.
+  // If we set a value that doesn't exist as an <option>, iPad won't show it.
+  input.innerHTML = '';
+  const opt = document.createElement('option');
+  opt.value = txt;
+  opt.textContent = txt;
+  input.appendChild(opt);
+  input.value = txt;
+
+  modal.classList.remove('show');
+});
 }
 
 function setupServices() {
