@@ -1088,6 +1088,12 @@ document.addEventListener('touchstart', e => {
 document.addEventListener('touchmove', e => {
   if (!e.touches || e.touches.length !== 1) return;
 
+  // Do not block gestures that start on form controls
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+    return;
+  }
+
   const dx = Math.abs(e.touches[0].clientX - touchStartX);
   const dy = Math.abs(e.touches[0].clientY - touchStartY);
 
