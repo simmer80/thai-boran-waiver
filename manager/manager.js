@@ -769,6 +769,26 @@ function setupOfflineHint() {
   refresh();
 }
 
+function forceLock() {
+  // Always return to PIN screen
+  try {
+    showBlock("pinCard");
+    hideBlock("mgrCard");
+  } catch (_) {
+    // Fallback if showBlock/hideBlock not available yet
+    const p = el("pinCard");
+    const m = el("mgrCard");
+    if (p) p.style.display = "block";
+    if (m) m.style.display = "none";
+  }
+
+  if (el("pinMsg")) el("pinMsg").textContent = "";
+  if (el("pin")) {
+    el("pin").value = "";
+    try { el("pin").focus(); } catch (_) {}
+  }
+}
+
 function unlockIfPinOk(pin) {
   if (pin === MANAGER_PIN) {
     hideBlock("pinCard");
@@ -781,14 +801,21 @@ function unlockIfPinOk(pin) {
 
 function init() {
   setupOfflineHint();
+  // Auto-lock whenever the manager page is left or restored (iPad swipe/back cache safe)
+  window.addEventListener("pagehide", () => {
+    forceLock();
+  });
 
-    // Always start locked, force PIN only (hard reset)
-  el("pinCard").style.display = "block";
-  el("mgrCard").style.display = "none";
+  window.addEventListener("pageshow", () => {
+    forceLock();
+  });
 
-  el("pinMsg").textContent = "";
-  el("pin").value = "";
-  el("pin").focus();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") forceLock();
+  });
+
+      // Always start locked
+  forceLock();
 
   el("btnUnlock").addEventListener("click", () => {
     const pin = (el("pin").value || "").trim();
@@ -854,6 +881,7 @@ el("btnBackToList").addEventListener("click", () => showModal("detailModal", fal
 }
 
 init();
+
 
 
 
