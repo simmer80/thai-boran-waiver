@@ -990,7 +990,14 @@ el('photoInput').addEventListener('change', async (e) => {
     try { await startStream(); } catch (_) {}
   });
 
-  el('btnSubmit').addEventListener('click', submit);
+    el('btnSubmit').addEventListener('click', submit);
+
+  // Manager Access (opens the manager page from inside the waiver PWA)
+  if (el('btnManagerAccess')) {
+    el('btnManagerAccess').addEventListener('click', () => {
+      window.location.href = './manager/';
+    });
+  }
 
 // Receptionist: Edit Records
 if (el('btnEditRecords')) {
