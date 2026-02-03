@@ -29,7 +29,46 @@ const STORE = 'submissions';
 
 // Receptionist PIN (change this value if you want a different code)
 const RECEPTION_PIN = '2512';
+const PHOTO_CAPTURE_ENABLED_KEY = 'tb_photo_capture_enabled';
 
+function isPhotoCaptureEnabled() {
+  const v = localStorage.getItem(PHOTO_CAPTURE_ENABLED_KEY);
+  // default: enabled
+  if (v === null) return true;
+  return v === '1';
+}
+
+function setPhotoCaptureEnabled(enabled) {
+  localStorage.setItem(PHOTO_CAPTURE_ENABLED_KEY, enabled ? '1' : '0');
+}
+
+function updateSettingsUi() {
+  const btn = el('btnTogglePhotoCapture');
+  if (!btn) return;
+  btn.textContent = isPhotoCaptureEnabled() ? 'Photo capture: Enabled' : 'Photo capture: Disabled';
+}
+
+function applyPhotoGate() {
+  const consent = el('consentPrivacy');
+  const takeBtn = el('btnTakePhoto');
+  const sigHelp = el('sigHelp');
+
+  if (!consent || !takeBtn) return;
+
+  if (isPhotoCaptureEnabled()) {
+    takeBtn.disabled = !consent.checked;
+    if (sigHelp) sigHelp.textContent = 'Signature is enabled only after a photo is taken';
+    setSignatureEnabled(state.photoTaken);
+  } else {
+    // still require privacy consent, but bypass photo capture
+    consent.disabled = false; // ensure receptionist can re-enable later without being stuck disabled
+    takeBtn.disabled = true;
+    if (sigHelp) sigHelp.textContent = 'Signature is enabled after accepting the Privacy Notice';
+    setSignatureEnabled(!!consent.checked);
+  }
+
+  validate();
+}
 // Cross-page refresh (waiver page notifies manager page)
 const UPDATE_CHANNEL = 'tb_updates';
 const bc = ('BroadcastChannel' in window) ? new BroadcastChannel(UPDATE_CHANNEL) : null;
@@ -129,8 +168,9 @@ const addonsOk = true;
   const otherChecked = el('c_other').checked;
   const otherOk = !otherChecked || el('other_text').value.trim().length > 0;
 
-  const photoOk = state.photoTaken;
-  const sigOk = state.sigDirty;
+  const consentOk = el('consentPrivacy') ? el('consentPrivacy').checked : true;
+const photoOk = isPhotoCaptureEnabled() ? state.photoTaken : true;
+const sigOk = state.sigDirty;
 
   const ok =
     nameOk &&
@@ -141,8 +181,9 @@ const addonsOk = true;
     addonsOk &&
     timestartOk &&
     otherOk &&
-    photoOk &&
-    sigOk;
+consentOk &&
+photoOk &&
+sigOk;
 
   el('btnSubmit').disabled = !ok;
 
@@ -167,7 +208,8 @@ if (otherChecked && !el('other_text').value.trim()) {
   missing.push('Specify other medical condition');
 }
 
-if (!photoOk) missing.push('Photo');
+if (!consentOk) missing.push('Privacy Notice consent');
+if (isPhotoCaptureEnabled() && !photoOk) missing.push('Photo');
 if (!sigOk) missing.push('Signature');
 
 msg.style.color = '#b00020';
@@ -754,7 +796,7 @@ async function submit() {
       return alert("If 'Other medical conditions' is checked, please specify it.");
     }
 
-    if (!state.photoTaken) return alert('Please take a photo first');
+    if (isPhotoCaptureEnabled() && !state.photoTaken) return alert('Please take a photo first');
     if (!state.sigDirty) return alert('Signature missing');
 
     const cond = conditionsText();
@@ -767,10 +809,16 @@ async function submit() {
     const sigBytes = new Uint8Array(await sigBlob.arrayBuffer());
 
     // Photo file
-    const photoBytes = new Uint8Array(await state.photoBlob.arrayBuffer());
+    let photoBytes = new Uint8Array();
+let photoFile = '';
+
+if (isPhotoCaptureEnabled()) {
+  if (!state.photoBlob) return alert('Photo missing');
+  photoBytes = new Uint8Array(await state.photoBlob.arrayBuffer());
+  photoFile = `${safeName}.jpg`;
+}
 
     const sigFile = `${safeName}.png`;
-    const photoFile = `${safeName}.jpg`;
 
     const record = {
       id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2))),
@@ -952,16 +1000,15 @@ function setupEvents() {
   // apply on load in case record is prefilled or user returns
   syncOtherRequiredVisual();
 
-      // Privacy consent gate for photo
-  const consent = el('consentPrivacy');
-  const takeBtn = el('btnTakePhoto');
-  if (consent && takeBtn) {
-    takeBtn.disabled = !consent.checked;
-    consent.addEventListener('change', () => {
-      if (consent.disabled) return;
-      takeBtn.disabled = !consent.checked;
-    });
-  }
+      // Privacy consent gate (photo required by default, but can be disabled in Settings)
+const consent = el('consentPrivacy');
+if (consent) {
+  consent.addEventListener('change', () => {
+    if (consent.disabled) return;
+    applyPhotoGate();
+  });
+}
+applyPhotoGate();
 
   el('btnTakePhoto').addEventListener('click', async () => {
     const consent = el('consentPrivacy');
@@ -1040,8 +1087,47 @@ if (el('btnEditPinOk')) {
     }
 
     editUnlocked = true;
-    showModal('modalEditPin', false);
+showModal('modalEditPin', false);
+updateSettingsUi();
+showModal('modalSettings', true);
+  });
+}
+if (el('btnCloseSettings')) {
+  el('btnCloseSettings').addEventListener('click', () => showModal('modalSettings', false));
+}
+
+if (el('btnSettingsEditRecords')) {
+  el('btnSettingsEditRecords').addEventListener('click', async () => {
+    showModal('modalSettings', false);
     await openEditRecordsList();
+  });
+}
+
+if (el('btnTogglePhotoCapture')) {
+  el('btnTogglePhotoCapture').addEventListener('click', () => {
+    const enable = !isPhotoCaptureEnabled();
+    setPhotoCaptureEnabled(enable);
+
+    // If re-enabling photo capture, force photo + signature to be re-done for safety
+    if (enable) {
+      state.photoBlob = null;
+      state.photoTaken = false;
+
+      if (el('photoPreviewBox')) el('photoPreviewBox').classList.add('hidden');
+      if (el('photoPreview')) el('photoPreview').src = '';
+      if (el('photoStatus')) el('photoStatus').textContent = 'No photo taken yet';
+
+      const consent = el('consentPrivacy');
+      if (consent) consent.disabled = false;
+
+      // clear signature via existing clear button
+      if (el('btnClearSig')) el('btnClearSig').click();
+      state.sigDirty = false;
+      setSignatureEnabled(false);
+    }
+
+    updateSettingsUi();
+    applyPhotoGate();
   });
 }
 
