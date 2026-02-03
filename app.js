@@ -45,7 +45,12 @@ function setPhotoCaptureEnabled(enabled) {
 function updateSettingsUi() {
   const btn = el('btnTogglePhotoCapture');
   if (!btn) return;
-  btn.textContent = isPhotoCaptureEnabled() ? 'Photo capture: Enabled' : 'Photo capture: Disabled';
+
+  const enabled = isPhotoCaptureEnabled();
+  btn.textContent = enabled ? 'Photo capture: Enabled' : 'Photo capture: Disabled';
+
+  btn.classList.toggle('toggle-on', enabled);
+  btn.classList.toggle('toggle-off', !enabled);
 }
 
 function applyPhotoGate() {
