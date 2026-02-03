@@ -837,10 +837,17 @@ if (isPhotoCaptureEnabled()) {
       photoBytes: Array.from(photoBytes)
     };
 
-    await dbPut(record);
-notifyUpdate();
+        await dbPut(record);
+    notifyUpdate();
 
-resetForm(false);
+    // If photo capture was disabled for this submission, restore default immediately after success
+    if (!isPhotoCaptureEnabled()) {
+      setPhotoCaptureEnabled(true);
+      updateSettingsUi();
+    }
+
+    resetForm(false);
+    applyPhotoGate();
 
 const msg = el('submitMsg');
 msg.textContent = 'Submission successful';
@@ -1098,7 +1105,10 @@ showModal('modalSettings', true);
   });
 }
 if (el('btnCloseSettings')) {
-  el('btnCloseSettings').addEventListener('click', () => showModal('modalSettings', false));
+  el('btnCloseSettings').addEventListener('click', () => {
+    editUnlocked = false;
+    showModal('modalSettings', false);
+  });
 }
 
 if (el('btnSettingsEditRecords')) {
@@ -1137,11 +1147,22 @@ if (el('btnTogglePhotoCapture')) {
 }
 
 if (el('btnCloseEditRecords')) {
-  el('btnCloseEditRecords').addEventListener('click', () => showModal('modalEditRecords', false));
+  el('btnCloseEditRecords').addEventListener('click', () => {
+    // Back should return straight to the waiver form view, and lock Settings again
+    editUnlocked = false;
+    showModal('modalEditDetail', false);
+    showModal('modalEditRecords', false);
+    showModal('modalSettings', false);
+    showModal('modalEditPin', false);
+  });
 }
 
 if (el('btnEditDetailClose')) {
-  el('btnEditDetailClose').addEventListener('click', () => showModal('modalEditDetail', false));
+  el('btnEditDetailClose').addEventListener('click', () => {
+    // Back from detail returns to the list, not to PIN
+    showModal('modalEditDetail', false);
+    showModal('modalEditRecords', true);
+  });
 }
 
 if (el('btnEditDetailSave')) {
