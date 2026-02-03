@@ -232,7 +232,7 @@ Monday to Friday &amp; Holidays
       <div class="sig-wrap" style="margin-top:10px;">
         <canvas id="sig" class="sig-canvas"></canvas>
       </div>
-      <div class="small" style="margin-top:8px;">Signature is enabled only after a photo is taken</div>
+      <div id="sigHelp" class="small" style="margin-top:8px;">Signature is enabled only after a photo is taken</div>
 
             </div>
 
@@ -256,7 +256,7 @@ Monday to Friday &amp; Holidays
   <div class="row" style="gap:10px; flex-wrap: wrap;">
     <button id="btnSubmit" class="btn primary" type="button" disabled>Submit</button>
     <button id="btnPrintWaiver" class="btn" type="button">Print</button>
-    <button id="btnEditRecords" class="btn" type="button">Edit Records</button>
+    <button id="btnEditRecords" class="btn" type="button">Settings</button>
   </div>
   <button id="btnReset" class="btn danger" type="button">Reset Form</button>
 </div>
@@ -305,11 +305,12 @@ Monday to Friday &amp; Holidays
 <div id="modalEditPin" class="modal">
   <div class="modal-card">
     <div class="modal-head">
-      <div>Edit Records</div>
-      <button id="btnCloseEditPin" class="btn" type="button">Close</button>
-    </div>
-    <div class="modal-body">
-      <div class="small">Enter PIN to access saved records</div>
+      <div class="modal-head">
+  <div>Settings</div>
+  <button id="btnCloseEditPin" class="btn" type="button">Close</button>
+</div>
+<div class="modal-body">
+  <div class="small">Enter PIN to access settings</div>
       <div class="hr" style="margin-top:10px;"></div>
 
       <div class="grid" style="margin-top:10px;">
@@ -324,6 +325,26 @@ Monday to Friday &amp; Holidays
       </div>
 
       <div id="editPinMsg" class="small" style="margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+<div id="modalSettings" class="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>Settings</div>
+      <button id="btnCloseSettings" class="btn" type="button">Close</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="small">Choose an option</div>
+      <div class="hr" style="margin-top:10px;"></div>
+
+      <div class="row" style="gap:10px; flex-wrap: wrap; margin-top:10px;">
+        <button id="btnSettingsEditRecords" class="btn" type="button">Edit Records</button>
+        <button id="btnTogglePhotoCapture" class="btn primary" type="button">Photo capture: Enabled</button>
+      </div>
+
+      <div id="settingsMsg" class="small" style="margin-top:10px;"></div>
     </div>
   </div>
 </div>
