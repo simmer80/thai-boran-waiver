@@ -195,6 +195,66 @@ function contactAsText(value) {
   return `="${escapeCSV(s)}"`;
 }
 
+// ===== Pricing / Senior-PWD discount =====
+// A straight 20% discount off the gross (service + add-ons). The business is
+// NOT VAT-registered, so there is no VAT step. Rounding: discount is rounded to
+// the nearest whole peso with Math.round (half up); net = gross - discount. The
+// identical rule lives in manager.js calcSalesForRecord so the total shown at
+// submission and the manager-side figures always agree.
+const SENIOR_PWD_DISCOUNT_RATE = 0.20;
+const PRICE_SETS_KEY = 'tb_price_sets_v1'; // the manager page writes this
+
+function loadPriceSets() {
+  try {
+    const raw = localStorage.getItem(PRICE_SETS_KEY);
+    const a = raw ? JSON.parse(raw) : [];
+    return Array.isArray(a) ? a : [];
+  } catch { return []; }
+}
+
+function pickPriceSetForDate(ymd) {
+  const sets = loadPriceSets().slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)));
+  if (sets.length === 0) return null;
+  const d = String(ymd || '').trim();
+  if (!d) return sets[sets.length - 1];
+  let chosen = sets[0];
+  for (const s of sets) if (String(s.effectiveFrom) <= d) chosen = s;
+  return chosen;
+}
+
+function parseAddonsList(text) {
+  const t = String(text || '').trim();
+  if (!t || t.toLowerCase() === 'none') return [];
+  return t.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+}
+
+function computePricing(dateStr, serviceName, addonsText, isSenior) {
+  const set = pickPriceSetForDate(dateStr);
+  const servicePrice = Number(set?.services?.[String(serviceName || '').trim()] ?? 0) || 0;
+  let addonsPrice = 0;
+  for (const a of parseAddonsList(addonsText)) addonsPrice += (Number(set?.addons?.[a] ?? 0) || 0);
+  const gross = servicePrice + addonsPrice;
+  const discount = isSenior ? Math.round(gross * SENIOR_PWD_DISCOUNT_RATE) : 0;
+  const net = gross - discount;
+  return { servicePrice, addonsPrice, gross, discount, net };
+}
+
+function isSeniorSelected() {
+  const s = el('senior');
+  return !!s && s.value === 'Yes';
+}
+
+function pesos(n) { return '₱' + (Number(n) || 0); }
+
+function updateTotalPreview() {
+  const box = el('totalPreview');
+  if (!box) return;
+  const p = computePricing(el('date').value, el('services').value, selectedAddonsText(), isSeniorSelected());
+  box.textContent = isSeniorSelected()
+    ? `Total: gross ${pesos(p.gross)} − 20% Senior/PWD (${pesos(p.discount)}) = ${pesos(p.net)}`
+    : `Total: ${pesos(p.net)}`;
+}
+
 function conditionsText() {
   const out = [];
   if (el('c_pregnant').checked) out.push('Pregnant');
@@ -985,6 +1045,12 @@ async function submit() {
 
     const sigFile = `${safeName}.png`;
 
+    // Senior/PWD discount snapshot, stored in full so the calculation can be
+    // reconstructed later (gross, flag, discount, id, net) — not just the total.
+    const senior = isSeniorSelected();
+    const seniorId = senior ? (el('seniorId') ? el('seniorId').value.trim() : '') : '';
+    const pricing = computePricing(date, services, addons, senior);
+
     const record = {
       id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2))),
       createdAt: Date.now(),
@@ -994,7 +1060,12 @@ async function submit() {
       sigFile,
       photoFile,
       sigBytes: Array.from(sigBytes),
-      photoBlob: photoBlob
+      photoBlob: photoBlob,
+      senior: senior,
+      seniorId: seniorId,
+      priceGross: pricing.gross,
+      discountAmount: pricing.discount,
+      priceNet: pricing.net
     };
 
         await dbPut(record);
@@ -1010,7 +1081,7 @@ async function submit() {
     applyPhotoGate();
 
 const msg = el('submitMsg');
-msg.textContent = 'Submission successful';
+msg.textContent = 'Submission successful — Total ' + pesos(pricing.net) + (senior ? ' (20% Senior/PWD discount applied)' : '');
 msg.style.color = '#0a7a2a';
 msg.style.fontWeight = '700';
 msg.style.fontSize = '16px';
@@ -1046,6 +1117,11 @@ opt.value = 'None';
 opt.textContent = 'None';
 a.appendChild(opt);
 a.value = 'None';
+
+  if (el('senior')) el('senior').value = 'No';
+  if (el('seniorId')) el('seniorId').value = '';
+  if (el('seniorIdWrap')) el('seniorIdWrap').classList.add('hidden');
+  updateTotalPreview();
 
   el('c_pregnant').checked = false;
   el('c_thinners').checked = false;
@@ -1127,6 +1203,7 @@ function setupAddons() {
   input.appendChild(opt);
   input.value = txt;
 
+  updateTotalPreview();
   modal.classList.remove('show');
 });
 }
@@ -1155,6 +1232,24 @@ function setupEvents() {
   // selects update on change
   el('services').addEventListener('change', validate);
   if (el('addons')) el('addons').addEventListener('change', validate);
+
+  // Senior/PWD field: reveal the ID input only when Yes, keep the total live.
+  const seniorSel = el('senior');
+  if (seniorSel) {
+    const syncSenior = () => {
+      const wrap = el('seniorIdWrap');
+      if (wrap) wrap.classList.toggle('hidden', !isSeniorSelected());
+      updateTotalPreview();
+      validate();
+    };
+    seniorSel.addEventListener('change', syncSenior);
+    syncSenior();
+  }
+  // Keep the submission total preview current when price-affecting fields change.
+  ['date', 'services'].forEach((id) => {
+    const e = el(id);
+    if (e) { e.addEventListener('change', updateTotalPreview); e.addEventListener('input', updateTotalPreview); }
+  });
     ['c_pregnant','c_thinners','c_skin','c_bp','c_pre'].forEach((id) => el(id).addEventListener('input', () => {}));
 
   const otherBox = el('c_other');
@@ -1435,6 +1530,7 @@ document.addEventListener('touchend', () => {
 
   setSignatureEnabled(false);
   validate();
+  updateTotalPreview();
 
   await renderHistory();
 }

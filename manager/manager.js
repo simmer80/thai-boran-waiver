@@ -21,6 +21,11 @@ const el = (id) => document.getElementById(id);
 const PRICE_SETS_KEY = "tb_price_sets_v1";
 const PRICE_LOCKED_KEY = "tb_price_locked_v1";
 
+// Straight 20% Senior/PWD discount (business is not VAT-registered).
+// Rounding: Math.round(gross * rate) to the nearest whole peso; net = gross - discount.
+// Identical rule to app.js computePricing so submission and manager figures match.
+const SENIOR_PWD_DISCOUNT_RATE = 0.20;
+
 // Master lists (always show these in price control)
 const SERVICES = [
   "1hr Thai Back Massage",
@@ -277,11 +282,13 @@ function getAllSalesRows() {
 function calcSalesForAnyRow(r) {
   // Archived rows keep frozen totals
   if (r && typeof r._sale_total === "number") {
-    return {
-      servicePrice: Number(r._sale_servicePrice || 0) || 0,
-      addonsPrice: Number(r._sale_addonsPrice || 0) || 0,
-      total: Number(r._sale_total || 0) || 0
-    };
+    const total = Number(r._sale_total || 0) || 0;
+    const servicePrice = Number(r._sale_servicePrice || 0) || 0;
+    const addonsPrice = Number(r._sale_addonsPrice || 0) || 0;
+    const gross = (typeof r._sale_gross === "number") ? r._sale_gross : (servicePrice + addonsPrice);
+    const discount = (typeof r._sale_discount === "number") ? r._sale_discount : Math.max(0, gross - total);
+    const senior = (typeof r._sale_senior === "boolean") ? r._sale_senior : !!r.senior;
+    return { servicePrice, addonsPrice, gross, senior, discount, total };
   }
   return calcSalesForRecord(r);
 }
@@ -307,6 +314,9 @@ function archiveCurrentSalesSnapshot() {
       ...r,
       _sale_servicePrice: s.servicePrice,
       _sale_addonsPrice: s.addonsPrice,
+      _sale_gross: s.gross,
+      _sale_discount: s.discount,
+      _sale_senior: s.senior,
       _sale_total: s.total
     });
   }
@@ -394,7 +404,27 @@ function calcSalesForRecord(r) {
     addonsPrice += (Number(set?.addons?.[a] ?? 0) || 0);
   }
 
-  return { servicePrice, addonsPrice, total: servicePrice + addonsPrice };
+  const gross = servicePrice + addonsPrice;
+  const senior = !!r.senior;
+  const discount = senior ? Math.round(gross * SENIOR_PWD_DISCOUNT_RATE) : 0;
+  const net = gross - discount;
+
+  // total = net so all existing sums (sales totals + chart) use the discounted figure
+  return { servicePrice, addonsPrice, gross, senior, discount, total: net };
+}
+
+// For display/export: prefer the snapshot stored on the record at submission
+// (priceGross/discountAmount/priceNet/senior/seniorId); fall back to a live
+// recompute so old records with no snapshot still show sensible figures.
+function pricingForDisplay(r) {
+  const c = calcSalesForRecord(r);
+  return {
+    senior: (typeof r.senior === "boolean") ? r.senior : c.senior,
+    seniorId: r.seniorId || "",
+    gross: (typeof r.priceGross === "number") ? r.priceGross : c.gross,
+    discount: (typeof r.discountAmount === "number") ? r.discountAmount : c.discount,
+    net: (typeof r.priceNet === "number") ? r.priceNet : c.total
+  };
 }
 
 function collectDistinctItemsFromRows(rows) {
@@ -562,8 +592,10 @@ function renderSales() {
       <td>${escapeCSV(r.name || "")}</td>
       <td>${escapeCSV(r.services || "")}</td>
       <td>${escapeCSV(r.addons || "")}</td>
+      <td>${s.senior ? "Yes" : "No"}</td>
       <td>${escapeCSV(String(s.servicePrice))}</td>
       <td>${escapeCSV(String(s.addonsPrice))}</td>
+      <td>${escapeCSV(String(s.discount))}</td>
       <td>${escapeCSV(String(s.total))}</td>
     `;
     tb.appendChild(tr);
@@ -680,6 +712,7 @@ function renderTable(rows) {
   for (const r of rows) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
+    const pd = pricingForDisplay(r);
 
     tr.innerHTML = `
       <td>${escapeCSV(r.timestamp || "")}</td>
@@ -694,6 +727,11 @@ function renderTable(rows) {
       <td>${escapeCSV(r.conditions || "")}</td>
       <td>${escapeCSV(r.sigFile || "")}</td>
       <td>${escapeCSV(r.photoFile || "")}</td>
+      <td>${pd.senior ? "Yes" : "No"}</td>
+      <td>${escapeCSV(pd.seniorId)}</td>
+      <td>${escapeCSV(String(pd.gross))}</td>
+      <td>${escapeCSV(String(pd.discount))}</td>
+      <td>${escapeCSV(String(pd.net))}</td>
     `;
 
     tr.addEventListener("click", () => openDetails(r));
@@ -740,6 +778,13 @@ function openDetails(r) {
   kv.appendChild(kvRow("Signature File", r.sigFile || ""));
   kv.appendChild(kvRow("Photo File", r.photoFile || ""));
 
+  const pd = pricingForDisplay(r);
+  kv.appendChild(kvRow("Senior/PWD", pd.senior ? "Yes" : "No"));
+  kv.appendChild(kvRow("Senior/PWD ID", pd.seniorId));
+  kv.appendChild(kvRow("Gross", String(pd.gross)));
+  kv.appendChild(kvRow("Discount", String(pd.discount)));
+  kv.appendChild(kvRow("Net", String(pd.net)));
+
   const sigBytes = toUint8(r.sigBytes);
 
   const photoUrl = photoUrlOf(r);
@@ -756,7 +801,8 @@ function openDetails(r) {
 
   el("btnExportZipOne").onclick = async () => {
     const photoBytes = await photoBytesOf(r);
-    const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp\n";
+    const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp,Senior,PWD_ID,Gross,Discount,Net\n";
+    const pd = pricingForDisplay(r);
     const csv = header + [
       escapeCSV(r.name),
       escapeCSV(r.date),
@@ -769,7 +815,12 @@ function openDetails(r) {
       escapeCSV(r.conditions),
       escapeCSV(r.sigFile),
       escapeCSV(r.photoFile),
-      escapeCSV(r.timestamp)
+      escapeCSV(r.timestamp),
+      escapeCSV(pd.senior ? "Yes" : "No"),
+      escapeCSV(pd.seniorId),
+      escapeCSV(String(pd.gross)),
+      escapeCSV(String(pd.discount)),
+      escapeCSV(String(pd.net))
     ].join(",") + "\n";
 
     const files = [
@@ -797,10 +848,11 @@ async function exportCsvOnly() {
   const rows = await dbGetAll();
   rows.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
-  const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp\n";
+  const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp,Senior,PWD_ID,Gross,Discount,Net\n";
   let csv = header;
 
   for (const r of rows) {
+    const pd = pricingForDisplay(r);
     csv += [
       escapeCSV(r.name),
       escapeCSV(r.date),
@@ -813,7 +865,12 @@ async function exportCsvOnly() {
       escapeCSV(r.conditions),
       escapeCSV(r.sigFile),
       escapeCSV(r.photoFile),
-      escapeCSV(r.timestamp)
+      escapeCSV(r.timestamp),
+      escapeCSV(pd.senior ? "Yes" : "No"),
+      escapeCSV(pd.seniorId),
+      escapeCSV(String(pd.gross)),
+      escapeCSV(String(pd.discount)),
+      escapeCSV(String(pd.net))
     ].join(",") + "\n";
   }
 
@@ -824,7 +881,7 @@ async function exportZipAll() {
   const rows = await dbGetAll();
   rows.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
-  const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp\n";
+  const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp,Senior,PWD_ID,Gross,Discount,Net\n";
   let csv = header;
 
   const files = [];
@@ -842,6 +899,7 @@ async function exportZipAll() {
     const photoPath = hasPhoto ? `photos/${idx}_${r.photoFile || "photo.jpg"}` : "";
 
     // SignaturePath/PhotoPath columns point at the exact files in this zip.
+    const pd = pricingForDisplay(r);
     csv += [
       escapeCSV(r.name),
       escapeCSV(r.date),
@@ -854,7 +912,12 @@ async function exportZipAll() {
       escapeCSV(r.conditions),
       escapeCSV(sigPath),
       escapeCSV(photoPath),
-      escapeCSV(r.timestamp)
+      escapeCSV(r.timestamp),
+      escapeCSV(pd.senior ? "Yes" : "No"),
+      escapeCSV(pd.seniorId),
+      escapeCSV(String(pd.gross)),
+      escapeCSV(String(pd.discount)),
+      escapeCSV(String(pd.net))
     ].join(",") + "\n";
 
     files.push({ name: sigPath, data: toUint8(r.sigBytes) });
