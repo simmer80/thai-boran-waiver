@@ -1174,14 +1174,20 @@ el('btnPrintWaiver').addEventListener('click', () => {
   window.print();
 });
 
-  el('btnExport').addEventListener('click', exportAll);
+  // btnExport / btnClearAll live on the manager page, not the customer form.
+  // Guard so a missing element never throws and aborts the rest of init().
+  if (el('btnExport')) {
+    el('btnExport').addEventListener('click', exportAll);
+  }
 
-  el('btnClearAll').addEventListener('click', async () => {
-    if (!confirm('Clear all saved submissions on this iPad?')) return;
-    await dbClear();
-    await renderHistory();
-    alert('Saved data cleared');
-  });
+  if (el('btnClearAll')) {
+    el('btnClearAll').addEventListener('click', async () => {
+      if (!confirm('Clear all saved submissions on this iPad?')) return;
+      await dbClear();
+      await renderHistory();
+      alert('Saved data cleared');
+    });
+  }
 }
 
 function setupOfflineHint() {
