@@ -111,8 +111,22 @@ function nowTimestamp() {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
+// A valid name is any-script letters (incl. accents/combining marks) plus
+// spaces, hyphens and apostrophes, with at least one actual letter. Digits and
+// other symbols are rejected. Covers Filipino names with ñ / Spanish forms and
+// non-Latin scripts (e.g. ไทย, 日本語, العربية).
+function isValidName(name) {
+  const s = (name || '').trim();
+  if (!s) return false;
+  if (!/\p{L}/u.test(s)) return false;                 // must contain a letter
+  return /^[\p{L}\p{M} '’\-]+$/u.test(s);          // letters/marks/space/'/’/-
+}
+
+// Build a filesystem-safe base from a (valid) name: keep letters and combining
+// marks from any script, drop spaces/hyphens/apostrophes. Never empty for a
+// valid name.
 function sanitizeNameForFile(name) {
-  return (name || '').trim().replace(/\s+/g, '').replace(/[^a-zA-Z0-9_-]/g, '');
+  return (name || '').trim().normalize('NFC').replace(/[^\p{L}\p{M}]/gu, '');
 }
 
 function escapeCSV(value) {
@@ -157,7 +171,7 @@ function selectedAddonsText() {
 }
 
 function validate() {
-  const nameOk = el('name').value.trim().length > 0;
+  const nameOk = isValidName(el('name').value);
   const dateOk = el('date').value.trim().length > 0;
 
   const contactOk = el('contact').value.trim().length > 0;
@@ -202,7 +216,7 @@ if (ok) {
 
 const missing = [];
 
-if (!nameOk) missing.push('Name');
+if (!nameOk) missing.push(el('name').value.trim() ? 'Valid name (letters, spaces, - and ’ only)' : 'Name');
 if (!dateOk) missing.push('Date');
 if (!contactOk) missing.push('Contact phone');
 if (!servicesOk) missing.push('Services');
@@ -876,6 +890,7 @@ async function submit() {
     const timestart = el('timestart').value.trim();
 
         if (!name) return alert('Name is required');
+    if (!isValidName(name)) return alert('Please enter a valid name: letters, spaces, hyphens and apostrophes only.');
     if (!date) return alert('Date is required');
     if (!contact) return alert('Contact is required');
 
