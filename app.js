@@ -279,48 +279,61 @@ function setupSignature() {
   const canvas = el('sig');
   const ctx = canvas.getContext('2d');
 
-  function resize() {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-    ctx.scale(dpr, dpr);
-    // clear
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, rect.width, rect.height);
+  // The signature is kept as vector strokes in NORMALISED (0..1) coordinates,
+  // not as pixels. That lets us re-render it crisply at any size / DPR after a
+  // rotation or resize, with no cumulative blur and no drift. state.sigDirty is
+  // never reset here, so "signature present" survives a rotation.
+  state.sigStrokes = [];
+  let current = null;
+  let drawing = false;
+
+  function applyStrokeStyle() {
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
-    state.sigDirty = false;
-    validate();
+    ctx.lineJoin = 'round';
   }
 
-  let drawing = false;
-  let last = null;
-
-  function pointerDown(e) {
-    if (canvas.dataset.enabled !== '1') return;
-    drawing = true;
-    last = getPoint(e);
-  }
-
-  function pointerMove(e) {
-    if (!drawing) return;
-    const p = getPoint(e);
+  // Re-render every stored stroke into the current canvas box.
+  function paintAll() {
     const rect = canvas.getBoundingClientRect();
-    ctx.beginPath();
-    ctx.moveTo(last.x, last.y);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    last = p;
-    state.sigDirty = true;
-    validate();
-    e.preventDefault();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    applyStrokeStyle();
+    for (const stroke of state.sigStrokes) {
+      if (!stroke.length) continue;
+      ctx.beginPath();
+      if (stroke.length === 1) {
+        const x = stroke[0].x * rect.width, y = stroke[0].y * rect.height;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 0.1, y + 0.1); // a lone tap -> a dot
+      } else {
+        for (let i = 0; i < stroke.length; i++) {
+          const x = stroke[i].x * rect.width, y = stroke[i].y * rect.height;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+    }
   }
 
-  function pointerUp() {
-    drawing = false;
-    last = null;
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    // Setting width/height resets the transform; re-apply a clean DPR scale.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+    paintAll();
+    validate();
+  }
+
+  // Read layout AFTER it settles (orientationchange fires before relayout on iOS).
+  let raf = 0;
+  function scheduleResize() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { raf = 0; resize(); });
   }
 
   function getPoint(e) {
@@ -328,7 +341,38 @@ function setupSignature() {
     const touch = e.touches && e.touches[0];
     const clientX = touch ? touch.clientX : e.clientX;
     const clientY = touch ? touch.clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+    return {
+      x: Math.min(1, Math.max(0, (clientX - rect.left) / (rect.width || 1))),
+      y: Math.min(1, Math.max(0, (clientY - rect.top) / (rect.height || 1)))
+    };
+  }
+
+  function pointerDown(e) {
+    if (canvas.dataset.enabled !== '1') return;
+    drawing = true;
+    current = [getPoint(e)];
+    state.sigStrokes.push(current);
+  }
+
+  function pointerMove(e) {
+    if (!drawing) return;
+    const rect = canvas.getBoundingClientRect();
+    const p = getPoint(e);
+    const n = current.length;
+    applyStrokeStyle();
+    ctx.beginPath();
+    ctx.moveTo(current[n - 1].x * rect.width, current[n - 1].y * rect.height);
+    ctx.lineTo(p.x * rect.width, p.y * rect.height);
+    ctx.stroke();
+    current.push(p);
+    state.sigDirty = true;
+    validate();
+    e.preventDefault();
+  }
+
+  function pointerUp() {
+    drawing = false;
+    current = null;
   }
 
   canvas.addEventListener('pointerdown', pointerDown);
@@ -336,10 +380,12 @@ function setupSignature() {
   canvas.addEventListener('pointerup', pointerUp);
   canvas.addEventListener('pointercancel', pointerUp);
 
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('orientationchange', scheduleResize);
   resize();
 
   el('btnClearSig').addEventListener('click', () => {
+    state.sigStrokes = [];
     const rect = canvas.getBoundingClientRect();
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, rect.width, rect.height);
