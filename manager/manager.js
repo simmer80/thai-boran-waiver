@@ -150,6 +150,10 @@ async function buildZip(files) {
   const centralParts = [];
   let offset = 0;
 
+  // General-purpose bit 11 set => entry filenames are UTF-8, so non-Latin
+  // names (e.g. Thai, accented Spanish) render correctly in all unzip tools.
+  const gpFlag = u16(0x0800);
+
   for (const f of files) {
     const nameBytes = encoder.encode(f.name);
     const dataBytes = f.data;
@@ -157,7 +161,7 @@ async function buildZip(files) {
 
     const localHeader = [
       u32(0x04034b50),
-      u16(20), u16(0), u16(0), u16(0), u16(0),
+      u16(20), gpFlag, u16(0), u16(0), u16(0),
       u32(crc),
       u32(dataBytes.length),
       u32(dataBytes.length),
@@ -171,7 +175,7 @@ async function buildZip(files) {
 
     const centralHeader = [
       u32(0x02014b50),
-      u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u16(20), u16(20), gpFlag, u16(0), u16(0), u16(0),
       u32(crc),
       u32(dataBytes.length),
       u32(dataBytes.length),
