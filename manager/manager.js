@@ -808,7 +808,19 @@ async function exportZipAll() {
 
   const files = [];
 
+  let i = 0;
   for (const r of rows) {
+    i++;
+    const idx = String(i).padStart(4, "0");
+
+    // Prefix in-zip paths with a running index so duplicate client names
+    // never overwrite each other's photo/signature inside the archive.
+    const sigPath = `signatures/${idx}_${r.sigFile || "signature.png"}`;
+    const photoBytes = toUint8(r.photoBytes);
+    const hasPhoto = photoBytes.length > 0;
+    const photoPath = hasPhoto ? `photos/${idx}_${r.photoFile || "photo.jpg"}` : "";
+
+    // SignaturePath/PhotoPath columns point at the exact files in this zip.
     csv += [
       escapeCSV(r.name),
       escapeCSV(r.date),
@@ -819,16 +831,33 @@ async function exportZipAll() {
       escapeCSV(r.therapist),
       escapeCSV(r.timestart),
       escapeCSV(r.conditions),
-      escapeCSV(r.sigFile),
-      escapeCSV(r.photoFile),
+      escapeCSV(sigPath),
+      escapeCSV(photoPath),
       escapeCSV(r.timestamp)
     ].join(",") + "\n";
 
-    files.push({ name: `signatures/${r.sigFile}`, data: toUint8(r.sigBytes) });
-    files.push({ name: `photos/${r.photoFile}`, data: toUint8(r.photoBytes) });
+    files.push({ name: sigPath, data: toUint8(r.sigBytes) });
+    if (hasPhoto) files.push({ name: photoPath, data: photoBytes });
   }
 
   files.unshift({ name: "ThaiBoran_Waivers.csv", data: new TextEncoder().encode(csv) });
+
+  // Include manager-only state that lives in localStorage and is in no other
+  // export: the editable price list and the frozen sales archive.
+  const priceSets = loadPriceSets();
+  const salesArchive = loadSalesArchive();
+  files.push({ name: "data/price_sets.json", data: new TextEncoder().encode(JSON.stringify(priceSets, null, 2)) });
+  files.push({ name: "data/sales_archive.json", data: new TextEncoder().encode(JSON.stringify(salesArchive, null, 2)) });
+
+  const readme =
+    "Thai Boran Waiver - full export\n" +
+    "Generated: " + stampForFile() + "\n\n" +
+    "ThaiBoran_Waivers.csv    All records; SignaturePath/PhotoPath point into this zip\n" +
+    "signatures/              One PNG per record (NNNN_ prefix keeps names unique)\n" +
+    "photos/                  One JPEG per record that has a photo\n" +
+    "data/price_sets.json     Manager-editable price list (from localStorage)\n" +
+    "data/sales_archive.json  Frozen sales snapshots kept across Clear Saved Data\n";
+  files.push({ name: "README.txt", data: new TextEncoder().encode(readme) });
 
   const zipBytes = await buildZip(files);
   downloadBytes(zipBytes, `ThaiBoran_Export_${stampForFile()}.zip`, "application/zip");
@@ -908,6 +937,7 @@ function init() {
   });
 
     el("btnExportCsv").addEventListener("click", exportCsvOnly);
+    if (el("btnExportAll")) el("btnExportAll").addEventListener("click", exportZipAll);
 
     // Tabs
   el("tabWaiver").addEventListener("click", () => {
