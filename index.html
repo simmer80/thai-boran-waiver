@@ -88,6 +88,7 @@ body {
 <body>
   <main>
     <div id="offlineHint" class="notice hidden"></div>
+    <div id="photoModeBanner" class="notice hidden" style="background:#fee2e2; border-color:#fecaca; color:#7f1d1d; font-weight:700; text-align:center;"></div>
 
 <div class="row" style="justify-content:flex-end; margin: 10px 0 14px 0;">
   <button id="btnManagerAccess" class="btn" type="button">Manager Access</button>
@@ -341,9 +342,16 @@ Monday to Friday &amp; Holidays
 
       <div class="row" style="gap:10px; flex-wrap: wrap; margin-top:10px;">
         <button id="btnSettingsEditRecords" class="btn" type="button">Edit Records</button>
-        <button id="btnTogglePhotoCapture" class="btn primary" type="button">Photo capture: Enabled</button>
+        <button id="btnTogglePhotoCapture" class="btn primary" type="button">This client photo: Enabled</button>
+        <button id="btnTogglePhotoPermanent" class="btn" type="button">Disable photo permanently: OFF</button>
       </div>
 
+      <div class="small" style="margin-top:10px;">
+        <b>"This client photo"</b> skips the photo for one client, then reverts.
+        <b>"Disable photo permanently"</b> stays off for every client, even after the app is restarted, until you turn it back on.
+      </div>
+
+      <div id="photoModeStatus" class="small" style="margin-top:8px;"></div>
       <div id="settingsMsg" class="small" style="margin-top:10px;"></div>
     </div>
   </div>

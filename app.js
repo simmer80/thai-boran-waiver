@@ -29,28 +29,80 @@ const STORE = 'submissions';
 
 // Receptionist PIN (change this value if you want a different code)
 const RECEPTION_PIN = '2512';
-const PHOTO_CAPTURE_ENABLED_KEY = 'tb_photo_capture_enabled';
+const PHOTO_CAPTURE_ENABLED_KEY = 'tb_photo_capture_enabled';               // one-off (this client)
+const PHOTO_PERMANENT_DISABLED_KEY = 'tb_photo_capture_permanent_disabled'; // persists across submits + restarts
 
-function isPhotoCaptureEnabled() {
+// One-off (per-client) toggle. Auto-reverts to enabled after each submission.
+function isPhotoOneOffEnabled() {
   const v = localStorage.getItem(PHOTO_CAPTURE_ENABLED_KEY);
-  // default: enabled
-  if (v === null) return true;
+  if (v === null) return true; // default: enabled
   return v === '1';
 }
-
 function setPhotoCaptureEnabled(enabled) {
   localStorage.setItem(PHOTO_CAPTURE_ENABLED_KEY, enabled ? '1' : '0');
 }
 
+// Permanent toggle. Persists until explicitly turned off (survives app restart).
+function isPhotoPermanentlyDisabled() {
+  return localStorage.getItem(PHOTO_PERMANENT_DISABLED_KEY) === '1';
+}
+function setPhotoPermanentlyDisabled(on) {
+  localStorage.setItem(PHOTO_PERMANENT_DISABLED_KEY, on ? '1' : '0');
+}
+
+// Effective state: photo is required only when it is NOT permanently disabled
+// AND the one-off toggle is enabled. The two flags are independent and never
+// conflict — permanent simply wins.
+function isPhotoCaptureEnabled() {
+  if (isPhotoPermanentlyDisabled()) return false;
+  return isPhotoOneOffEnabled();
+}
+
+// Human-readable description of the effective photo mode.
+function photoModeText() {
+  if (isPhotoPermanentlyDisabled()) return 'Photo capture is OFF for ALL clients (permanent)';
+  if (!isPhotoOneOffEnabled()) return 'Photo capture is OFF for this client only (reverts after next submit)';
+  return 'Photo capture is ON';
+}
+
 function updateSettingsUi() {
-  const btn = el('btnTogglePhotoCapture');
-  if (!btn) return;
+  const one = el('btnTogglePhotoCapture');
+  const perm = el('btnTogglePhotoPermanent');
+  const status = el('photoModeStatus');
 
-  const enabled = isPhotoCaptureEnabled();
-  btn.textContent = enabled ? 'Photo capture: Enabled' : 'Photo capture: Disabled';
+  const permOff = isPhotoPermanentlyDisabled();
+  const oneOn = isPhotoOneOffEnabled();
 
-  btn.classList.toggle('toggle-on', enabled);
-  btn.classList.toggle('toggle-off', !enabled);
+  if (one) {
+    one.textContent = oneOn ? 'This client photo: Enabled' : 'This client photo: Disabled (one-off)';
+    one.classList.toggle('toggle-on', oneOn);
+    one.classList.toggle('toggle-off', !oneOn);
+  }
+  if (perm) {
+    perm.textContent = permOff ? 'Disable photo permanently: ON' : 'Disable photo permanently: OFF';
+    perm.classList.toggle('toggle-off', permOff);   // red when permanently disabled
+    perm.classList.toggle('toggle-on', !permOff);
+  }
+  if (status) {
+    status.textContent = photoModeText();
+    status.style.color = isPhotoCaptureEnabled() ? '#0a7a2a' : '#b00020';
+    status.style.fontWeight = '700';
+  }
+
+  updatePhotoModeBanner();
+}
+
+// Banner on the main form so the receptionist always sees the active mode.
+function updatePhotoModeBanner() {
+  const banner = el('photoModeBanner');
+  if (!banner) return;
+  if (isPhotoCaptureEnabled()) {
+    banner.classList.add('hidden');
+    banner.textContent = '';
+  } else {
+    banner.classList.remove('hidden');
+    banner.textContent = '⚠ ' + photoModeText();
+  }
 }
 
 function applyPhotoGate() {
@@ -72,6 +124,7 @@ function applyPhotoGate() {
     setSignatureEnabled(!!consent.checked);
   }
 
+  updatePhotoModeBanner();
   validate();
 }
 // Cross-page refresh (waiver page notifies manager page)
@@ -1250,6 +1303,27 @@ if (el('btnTogglePhotoCapture')) {
       state.sigDirty = false;
       setSignatureEnabled(false);
     }
+
+    updateSettingsUi();
+    applyPhotoGate();
+  });
+}
+
+if (el('btnTogglePhotoPermanent')) {
+  el('btnTogglePhotoPermanent').addEventListener('click', () => {
+    setPhotoPermanentlyDisabled(!isPhotoPermanentlyDisabled());
+
+    // Reset any in-progress photo/signature so the form matches the new mode.
+    state.photoBlob = null;
+    state.photoTaken = false;
+    if (el('photoPreviewBox')) el('photoPreviewBox').classList.add('hidden');
+    if (el('photoPreview')) el('photoPreview').src = '';
+    if (el('photoStatus')) el('photoStatus').textContent = 'No photo taken yet';
+    const consent = el('consentPrivacy');
+    if (consent) consent.disabled = false;
+    if (el('btnClearSig')) el('btnClearSig').click();
+    state.sigDirty = false;
+    setSignatureEnabled(false);
 
     updateSettingsUi();
     applyPhotoGate();
