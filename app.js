@@ -6,7 +6,7 @@ const SERVICES = [
   'Combo 1', 'Combo 2', 'Combo 3', 'Combo 4', 'Combo 5', 'Combo 6', 'Combo 7', 'Combo 8'
 ];
 
-const ADD_ONS = ['Unscented Oil', 'Scented Oil', 'Herbal Hotpads', 'Ventosa', 'Hot Stone', 'Half Hour'];
+const ADD_ONS = ['Unscented Oil', 'Scented Oil', 'Herbal Hotpads', 'Ventosa', 'Hot Stone', 'Half Hour', '1 hr extra massage'];
 
 // Matches Android strings.xml (waiver_text). Item 1 is the medical conditions block above.
 const WAIVER_HTML = `

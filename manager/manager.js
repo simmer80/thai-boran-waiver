@@ -45,7 +45,8 @@ const ADD_ONS = [
   "Herbal Hotpads",
   "Ventosa",
   "Hot Stone",
-  "Half Hour"
+  "Half Hour",
+  "1 hr extra massage"
 ];
 
 // Force show/hide even if CSS uses !important somewhere
