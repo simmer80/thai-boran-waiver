@@ -219,6 +219,20 @@ function toUint8(a) {
   return new Uint8Array(Array.isArray(a) ? a : []);
 }
 
+// Photo access tolerant of both storage formats:
+//   new records store record.photoBlob (a Blob);
+//   old records stored record.photoBytes (Array<number>).
+function photoUrlOf(r) {
+  if (r.photoBlob instanceof Blob) return URL.createObjectURL(r.photoBlob);
+  const a = toUint8(r.photoBytes);
+  return a.length ? URL.createObjectURL(new Blob([a], { type: "image/jpeg" })) : "";
+}
+
+async function photoBytesOf(r) {
+  if (r.photoBlob instanceof Blob) return new Uint8Array(await r.photoBlob.arrayBuffer());
+  return toUint8(r.photoBytes);
+}
+
 let cachedRows = [];
 let selected = null;
 
@@ -722,19 +736,22 @@ function openDetails(r) {
   kv.appendChild(kvRow("Signature File", r.sigFile || ""));
   kv.appendChild(kvRow("Photo File", r.photoFile || ""));
 
-  const photoBytes = toUint8(r.photoBytes);
   const sigBytes = toUint8(r.sigBytes);
 
-  const photoUrl = URL.createObjectURL(new Blob([photoBytes], { type: "image/jpeg" }));
+  const photoUrl = photoUrlOf(r);
   const sigUrl = URL.createObjectURL(new Blob([sigBytes], { type: "image/png" }));
 
   el("detailPhoto").src = photoUrl;
   el("detailSig").src = sigUrl;
 
-  el("btnDownloadPhoto").onclick = () => downloadBytes(photoBytes, r.photoFile || "photo.jpg", "image/jpeg");
+  el("btnDownloadPhoto").onclick = async () => {
+    if (r.photoBlob instanceof Blob) return downloadBlob(r.photoBlob, r.photoFile || "photo.jpg");
+    downloadBytes(await photoBytesOf(r), r.photoFile || "photo.jpg", "image/jpeg");
+  };
   el("btnDownloadSig").onclick = () => downloadBytes(sigBytes, r.sigFile || "signature.png", "image/png");
 
   el("btnExportZipOne").onclick = async () => {
+    const photoBytes = await photoBytesOf(r);
     const header = "Name,Date,Address,Contact,Services,AddOns,Therapist,TimeStart,Conditions,SignaturePath,PhotoPath,Timestamp\n";
     const csv = header + [
       escapeCSV(r.name),
@@ -753,9 +770,9 @@ function openDetails(r) {
 
     const files = [
       { name: "ThaiBoran_Waiver_One.csv", data: new TextEncoder().encode(csv) },
-      { name: `signatures/${r.sigFile || "signature.png"}`, data: sigBytes },
-      { name: `photos/${r.photoFile || "photo.jpg"}`, data: photoBytes }
+      { name: `signatures/${r.sigFile || "signature.png"}`, data: sigBytes }
     ];
+    if (photoBytes.length) files.push({ name: `photos/${r.photoFile || "photo.jpg"}`, data: photoBytes });
 
     const zipBytes = await buildZip(files);
     downloadBytes(zipBytes, `ThaiBoran_One_${stampForFile()}.zip`, "application/zip");
@@ -816,7 +833,7 @@ async function exportZipAll() {
     // Prefix in-zip paths with a running index so duplicate client names
     // never overwrite each other's photo/signature inside the archive.
     const sigPath = `signatures/${idx}_${r.sigFile || "signature.png"}`;
-    const photoBytes = toUint8(r.photoBytes);
+    const photoBytes = await photoBytesOf(r);
     const hasPhoto = photoBytes.length > 0;
     const photoPath = hasPhoto ? `photos/${idx}_${r.photoFile || "photo.jpg"}` : "";
 

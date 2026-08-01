@@ -354,6 +354,45 @@ function canvasToPngBlob(canvas) {
   });
 }
 
+// Downscale a captured image to a JPEG Blob (max long edge / quality).
+// An ID face photo needs no more than ~1024px. Never throws: on any failure
+// it returns the original blob so a photo is never lost.
+async function downscaleToJpegBlob(srcBlob, maxEdge = 1024, quality = 0.8) {
+  const url = URL.createObjectURL(srcBlob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('image decode failed'));
+      im.src = url;
+    });
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return srcBlob;
+    const scale = Math.min(1, maxEdge / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * scale));
+    const ch = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+    const out = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    return out || srcBlob;
+  } catch (_) {
+    return srcBlob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Photo bytes for a record, tolerant of both storage formats:
+//   new records store record.photoBlob (a Blob);
+//   old records stored record.photoBytes (Array<number>).
+async function recordPhotoBytes(r) {
+  if (r.photoBlob instanceof Blob) return new Uint8Array(await r.photoBlob.arrayBuffer());
+  return new Uint8Array(Array.isArray(r.photoBytes) ? r.photoBytes : []);
+}
+
 // Camera capture
 async function stopStream() {
   if (state.stream) {
@@ -406,9 +445,10 @@ async function snapPhoto() {
 
   ctx.drawImage(video, 0, 0, vw, vh);
 
-  const blob = await new Promise((resolve) =>
+  const blob0 = await new Promise((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.92)
   );
+  const blob = await downscaleToJpegBlob(blob0, 1024, 0.8);
 
     state.photoBlob = blob;
   state.photoTaken = true;
@@ -767,7 +807,8 @@ async function exportAll() {
     ].join(',') + '\n';
 
     files.push({ name: `signatures/${r.sigFile}`, data: new Uint8Array(r.sigBytes) });
-    files.push({ name: `photos/${r.photoFile}`, data: new Uint8Array(r.photoBytes) });
+    const _pb = await recordPhotoBytes(r);
+    if (_pb.length) files.push({ name: `photos/${r.photoFile}`, data: _pb });
   }
 
   files.unshift({ name: 'ThaiBoran_Waivers.csv', data: new TextEncoder().encode(csv) });
@@ -813,15 +854,16 @@ async function submit() {
     const sigBlob = await canvasToPngBlob(el('sig'));
     const sigBytes = new Uint8Array(await sigBlob.arrayBuffer());
 
-    // Photo file
-    let photoBytes = new Uint8Array();
-let photoFile = '';
+    // Photo (already downscaled at capture time). Stored as a Blob, not a
+    // per-byte array, to keep IndexedDB small and avoid iOS quota/eviction.
+    let photoBlob = null;
+    let photoFile = '';
 
-if (isPhotoCaptureEnabled()) {
-  if (!state.photoBlob) return alert('Photo missing');
-  photoBytes = new Uint8Array(await state.photoBlob.arrayBuffer());
-  photoFile = `${safeName}.jpg`;
-}
+    if (isPhotoCaptureEnabled()) {
+      if (!state.photoBlob) return alert('Photo missing');
+      photoBlob = state.photoBlob;
+      photoFile = `${safeName}.jpg`;
+    }
 
     const sigFile = `${safeName}.png`;
 
@@ -834,7 +876,7 @@ if (isPhotoCaptureEnabled()) {
       sigFile,
       photoFile,
       sigBytes: Array.from(sigBytes),
-      photoBytes: Array.from(photoBytes)
+      photoBlob: photoBlob
     };
 
         await dbPut(record);
@@ -1044,7 +1086,10 @@ el('photoInput').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
 
-  state.photoBlob = f;
+  // Downscale before storing (max 1024px long edge, JPEG ~0.8).
+  const shrunk = await downscaleToJpegBlob(f, 1024, 0.8);
+
+  state.photoBlob = shrunk;
   state.photoTaken = true;
 
   const consent = el('consentPrivacy');
@@ -1053,7 +1098,7 @@ el('photoInput').addEventListener('change', async (e) => {
     consent.disabled = true;
   }
 
-  const url = URL.createObjectURL(f);
+  const url = URL.createObjectURL(shrunk);
   el('photoPreview').src = url;
   el('photoPreviewBox').classList.remove('hidden');
   el('photoStatus').textContent = 'Photo taken';
