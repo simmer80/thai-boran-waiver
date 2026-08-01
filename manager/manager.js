@@ -1,5 +1,4 @@
 // Thai Boran Manager (reads the same IndexedDB as the waiver form)
-// Manager PIN: 3180
 
 const MANAGER_PIN = "3180";
 
