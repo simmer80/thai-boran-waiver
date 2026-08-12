@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="../manifest.json" />
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="../shared.css" />
+  <title>Thai Boran — Receptionist</title>
+</head>
+<body>
+  <main class="bo">
+    <div id="offlineHint" class="notice hidden"></div>
+
+    <!-- Local device settings: work offline, gated by the receptionist PIN.
+         These control THIS iPad (photo capture, prices used by the waiver
+         form, quick record fixes). Moved here from the Waiver Form tab. -->
+    <div class="panel noprint">
+      <h2 style="margin-top:0">This device (works offline)</h2>
+      <div id="localLocked" class="row">
+        <div><label for="rcPin">Receptionist PIN</label>
+          <input id="rcPin" type="password" inputmode="numeric" autocomplete="off" style="width:120px" /></div>
+        <button id="rcUnlock" class="btn primary">Unlock</button>
+        <span id="rcPinMsg" class="err" role="alert"></span>
+      </div>
+      <div id="localBody" class="hidden">
+        <div class="row" style="margin-top:6px;">
+          <button id="btnTogglePhotoCapture" class="btn" type="button">This client photo: …</button>
+          <button id="btnTogglePhotoPermanent" class="btn" type="button">Disable photo permanently: …</button>
+          <button id="btnEditRecords" class="btn" type="button">Edit local records (add-ons)</button>
+          <button id="btnPrices" class="btn" type="button">Price list</button>
+          <button id="rcLock" class="btn danger" type="button">Lock</button>
+        </div>
+        <div id="photoModeStatus" class="small" style="margin-top:8px;"></div>
+        <div class="small muted" style="margin-top:6px;">
+          "This client photo" skips the photo for one client, then reverts.
+          "Disable photo permanently" stays off for every client, even after a restart, until turned back on.
+          The price list is used by the waiver form and the manager sales view on this device.
+        </div>
+        <div id="localPanels" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <!-- Server-backed back office (online-first) -->
+    <div id="backoffice"></div>
+  </main>
+
+  <script src="../config.js"></script>
+  <script src="../shared.js"></script>
+  <script src="../printdoc.js"></script>
+  <script src="../backoffice.js"></script>
+  <script src="./reception.js"></script>
+  <script>
+    TB.injectNav('reception');
+    TBReception.init();
+    TBBackoffice.init({ managerMode: false, mount: document.getElementById('backoffice'), logoSrc: '../assets/thai_boran_logo.png' });
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('../sw.js');
+    }
+  </script>
+</body>
+</html>

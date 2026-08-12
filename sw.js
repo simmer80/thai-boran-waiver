@@ -1,10 +1,20 @@
-const CACHE_NAME = 'thai-boran-waiver-v6';
+const CACHE_NAME = 'thai-boran-waiver-v7';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './shared.css',
   './app.js',
+  './config.js',
+  './shared.js',
+  './sync.js',
+  './printdoc.js',
+  './backoffice.js',
   './manifest.json',
+
+  './reception/',
+  './reception/index.html',
+  './reception/reception.js',
 
   './manager/',
   './manager/index.html',
@@ -34,13 +44,18 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  const url = new URL(req.url);
+
+  // Never intercept API traffic: the back office is online-first and must
+  // see live data (and real failures) — not stale cached responses.
+  if (url.pathname.startsWith('/api/') || url.pathname.includes('/api/')) return;
+
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((resp) => {
         // Cache same-origin GET requests
         try {
-          const url = new URL(req.url);
           if (url.origin === self.location.origin && req.method === 'GET') {
             const copy = resp.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
