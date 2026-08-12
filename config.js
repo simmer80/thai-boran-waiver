@@ -8,6 +8,6 @@
 // branchId must match a branches/<id>/ folder in the data repo.
 
 window.TB_CONFIG = {
-  apiBase: '',
+  apiBase: 'https://thai-boran-server.onrender.com',
   branchId: 'panacan',
 };
