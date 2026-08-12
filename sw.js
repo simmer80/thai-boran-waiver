@@ -1,4 +1,4 @@
-const CACHE_NAME = 'thai-boran-waiver-v8';
+const CACHE_NAME = 'thai-boran-waiver-v9';
 const ASSETS = [
   './',
   './index.html',

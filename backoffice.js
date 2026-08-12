@@ -50,7 +50,54 @@
       return;
     }
     if (!state.user) { renderLogin(); return; }
+    if (state.user.mustChangePassword) { renderForcedChange(); return; }
     renderMain();
+  }
+
+  // Change-password form (shared markup). mode 'forced' locks the user here
+  // until they set their own password (after a manager reset).
+  function passwordFormHtml(mode) {
+    return `
+      <div class="row" style="flex-direction:column;align-items:stretch;">
+        <div><label for="pwCur">${mode === 'forced' ? 'Temporary password (the one the manager gave you)' : 'Current password'}</label>
+          <input id="pwCur" type="password" autocomplete="current-password" style="width:100%" /></div>
+        <div><label for="pwNew">New password (at least 10 characters)</label>
+          <input id="pwNew" type="password" autocomplete="new-password" style="width:100%" /></div>
+        <div><label for="pwNew2">Repeat new password</label>
+          <input id="pwNew2" type="password" autocomplete="new-password" style="width:100%" /></div>
+        <button id="pwGo" class="btn primary">Change password</button>
+        <div id="pwMsg" role="alert"></div>
+      </div>`;
+  }
+
+  async function submitPasswordChange() {
+    const msg = $('#pwMsg');
+    msg.className = 'err'; msg.textContent = '';
+    const cur = $('#pwCur').value, nw = $('#pwNew').value, nw2 = $('#pwNew2').value;
+    if (nw.length < 10) { msg.textContent = 'The new password must be at least 10 characters.'; return false; }
+    if (nw !== nw2) { msg.textContent = 'The two new passwords do not match.'; return false; }
+    try {
+      await TB.api('/api/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: nw } });
+      state.user = await TB.me();  // refreshed flag + new cookie already set
+      return true;
+    } catch (e) {
+      msg.textContent = e.message || 'Change failed';
+      return false;
+    }
+  }
+
+  function renderForcedChange() {
+    state.mount.innerHTML = `
+      <div class="panel" style="max-width:460px;margin:30px auto;">
+        <h2 style="margin-top:0">Set your own password</h2>
+        <p class="muted">Your password was reset by the manager. Before you can
+        continue, choose your own password — you will use it from now on.</p>
+        ${passwordFormHtml('forced')}
+      </div>`;
+    $('#pwGo').addEventListener('click', async () => {
+      if (await submitPasswordChange()) { try { await loadBasics(); } catch (_) {} render(); }
+    });
+    $('#pwCur').focus();
   }
 
   function renderLogin() {
@@ -65,19 +112,32 @@
             <input id="boPass" type="password" autocomplete="current-password" style="width:100%" /></div>
           <button id="boLogin" class="btn primary">Sign in</button>
           <div id="boLoginMsg" class="err" role="alert"></div>
+          <a href="#" id="boForgot" style="font-size:13px;">Forgot password?</a>
+          <div id="boForgotHelp" class="muted" style="display:none;">
+            <b>Receptionists:</b> ask the manager to reset it — the Manager tab has a
+            "Reset password" button for each receptionist and will show a temporary
+            password to hand to you.<br/>
+            <b>Manager:</b> contact the administrator (the password is reset from the
+            server command line).
+          </div>
         </div>
       </div>`;
     const go = async () => {
       $('#boLoginMsg').textContent = '';
       try {
         state.user = await TB.login($('#boUser').value.trim(), $('#boPass').value);
-        await loadBasics();
+        if (!state.user.mustChangePassword) await loadBasics();
         render();
       } catch (e) {
         $('#boLoginMsg').textContent = e.offline ? 'Cannot reach the server (offline?)' : (e.message || 'Login failed');
       }
     };
     $('#boLogin').addEventListener('click', go);
+    $('#boForgot').addEventListener('click', (e) => {
+      e.preventDefault();
+      const h = $('#boForgotHelp');
+      h.style.display = h.style.display === 'none' ? 'block' : 'none';
+    });
     $('#boPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     $('#boUser').focus();
   }
@@ -96,8 +156,12 @@
     state.mount.innerHTML = `
       <div class="row noprint" style="justify-content:space-between;align-items:center;">
         <div>Signed in as <b>${esc(state.user.name)}</b> <span class="muted">(${esc(state.user.role)}, ${esc(state.user.branch)})</span></div>
-        <button id="boLogout" class="btn">Sign out</button>
+        <div class="row">
+          <button id="boChangePw" class="btn">Change password</button>
+          <button id="boLogout" class="btn">Sign out</button>
+        </div>
       </div>
+      <div id="boPwPanel" class="noprint"></div>
       ${mgr ? '<div id="boTasks" class="panel noprint"><h2 style="margin-top:0">Tasks — awaiting approval</h2><div id="boTasksBody" class="muted">Loading…</div></div>' : ''}
       <div class="panel noprint">
         <h2 style="margin-top:0">Sessions &amp; sales</h2>
@@ -140,16 +204,74 @@
       ${mgr ? `
       <div class="panel noprint"><h2 style="margin-top:0">Therapists</h2>
         <div id="thBody"></div></div>
+      <div class="panel noprint"><h2 style="margin-top:0">Users &amp; passwords</h2>
+        <div id="usersBody"></div></div>
       <div class="panel noprint"><h2 style="margin-top:0">Google Drive mirror</h2>
         <div id="driveBody" class="muted">Loading…</div></div>` : ''}
     `;
 
     $('#boLogout').addEventListener('click', async () => { await TB.logout(); state.user = null; render(); });
+    $('#boChangePw').addEventListener('click', () => {
+      const p = $('#boPwPanel');
+      if (p.innerHTML) { p.innerHTML = ''; return; }
+      p.innerHTML = `<div class="panel" style="max-width:460px;">
+        <h2 style="margin-top:0">Change password</h2>${passwordFormHtml('normal')}</div>`;
+      $('#pwGo').addEventListener('click', async () => {
+        if (await submitPasswordChange()) {
+          p.innerHTML = '<div class="panel" style="max-width:460px;"><span class="ok">Password changed. Your other devices will need the new password.</span></div>';
+          setTimeout(() => { if ($('#boPwPanel')) $('#boPwPanel').innerHTML = ''; }, 5000);
+        }
+      });
+      $('#pwCur').focus();
+    });
     $('#fApply').addEventListener('click', loadSessions);
     $('#rGen').addEventListener('click', () => loadReport(true));
     $('#rLoad').addEventListener('click', () => loadReport(false));
     loadSessions();
-    if (mgr) { loadTasks(); renderTherapists(); loadDrive(); }
+    if (mgr) { loadTasks(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
+  }
+
+  // Manager: reset a receptionist's password (forgot-password flow — the
+  // temporary password is shown ONCE here for the manager to hand over).
+  function renderUsersAdmin() {
+    const host = $('#usersBody');
+    const receptionists = state.users.filter((u) => u.role === 'receptionist');
+    host.innerHTML = `
+      <div class="muted" style="margin-bottom:8px;">
+        If a receptionist forgets her password: reset it here, hand over the
+        temporary password, and she will be forced to choose her own on next
+        sign-in. Manager passwords cannot be reset here — that is done from
+        the server command line by the administrator.
+      </div>
+      <div class="tableWrap"><table>
+        <thead><tr><th>Username</th><th>Name</th><th>Role</th><th></th></tr></thead>
+        <tbody>${state.users.map((u) => `<tr>
+          <td>${esc(u.id)}</td><td>${esc(u.name)}</td><td>${esc(u.role)}</td>
+          <td>${u.role === 'receptionist'
+            ? `<button class="btn uReset" data-id="${esc(u.id)}" data-name="${esc(u.name)}">Reset password</button>`
+            : '<span class="muted">CLI only</span>'}</td>
+        </tr>`).join('')}</tbody></table></div>
+      <div id="uResetOut"></div>`;
+    host.querySelectorAll('.uReset').forEach((b) =>
+      b.addEventListener('click', async () => {
+        if (!confirm(`Reset the password for ${b.dataset.name}? Her current password stops working immediately.`)) return;
+        b.disabled = true;
+        try {
+          const out = await TB.api(`/api/users/${encodeURIComponent(b.dataset.id)}/reset-password`, { method: 'POST' });
+          $('#uResetOut').innerHTML = `<div class="panel" style="background:#fef3c7;border-color:#f59e0b;margin-top:10px;">
+            <b>Temporary password for ${esc(b.dataset.name)}:</b>
+            <div style="font:700 22px monospace; letter-spacing:1px; margin:8px 0;">${esc(out.tempPassword)}</div>
+            Write it down and hand it over now — <b>it is shown only this once</b>.
+            She must sign in with it and will be asked to choose her own password
+            before she can do anything else.
+            <div class="row" style="margin-top:8px;"><button class="btn" onclick="this.closest('#uResetOut, .panel').innerHTML=''">Done — hide it</button></div>
+          </div>`;
+        } catch (e) {
+          $('#uResetOut').innerHTML = `<div class="err" style="margin-top:8px;">${esc(e.message)}</div>`;
+        } finally {
+          b.disabled = false;
+        }
+      }));
   }
 
   // -------------------------------------------------------------- sessions
