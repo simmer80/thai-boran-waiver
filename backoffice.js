@@ -29,6 +29,21 @@
     sessions: [], editingId: null,
   };
 
+  // Wrap an async click action: the button disables (and can relabel) while
+  // the work runs, so double-clicks can never fire it twice.
+  async function busy(btn, label, fn) {
+    if (!btn || btn.disabled) return;
+    const old = btn.textContent;
+    btn.disabled = true;
+    if (label) btn.textContent = label;
+    try {
+      return await fn();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  }
+
   function todayISO() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -94,9 +109,9 @@
         continue, choose your own password — you will use it from now on.</p>
         ${passwordFormHtml('forced')}
       </div>`;
-    $('#pwGo').addEventListener('click', async () => {
+    $('#pwGo').addEventListener('click', () => busy($('#pwGo'), 'Changing…', async () => {
       if (await submitPasswordChange()) { try { await loadBasics(); } catch (_) {} render(); }
-    });
+    }));
     $('#pwCur').focus();
   }
 
@@ -122,7 +137,7 @@
           </div>
         </div>
       </div>`;
-    const go = async () => {
+    const go = () => busy($('#boLogin'), 'Signing in…', async () => {
       $('#boLoginMsg').textContent = '';
       try {
         state.user = await TB.login($('#boUser').value.trim(), $('#boPass').value);
@@ -131,7 +146,7 @@
       } catch (e) {
         $('#boLoginMsg').textContent = e.offline ? 'Cannot reach the server (offline?)' : (e.message || 'Login failed');
       }
-    };
+    });
     $('#boLogin').addEventListener('click', go);
     $('#boForgot').addEventListener('click', (e) => {
       e.preventDefault();
@@ -191,15 +206,19 @@
           <div><label>Document</label><select id="rType">
             ${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
           </select></div>
-          <div><label>Date (any day of the period)</label><input type="date" id="rPeriod" value="${todayISO()}" /></div>
-          <button id="rGen" class="btn primary">Generate / Refresh</button>
-          <button id="rLoad" class="btn">Open existing</button>
+          <div><label>Date (weekly documents use that day's week, Mon–Sun)</label><input type="date" id="rPeriod" value="${todayISO()}" /></div>
+          <button id="rGen" class="btn primary" title="Builds the document from the session records. Manual values you saved are kept.">Create / refresh from records</button>
+          <button id="rLoad" class="btn" title="Opens the last saved version without recalculating.">Open saved</button>
           <span id="rMsg" class="muted" role="status"></span>
         </div>
         <div id="rStatus" class="noprint" style="margin-top:8px;"></div>
         <div id="rActions" class="row noprint" style="margin-top:8px;"></div>
         <div id="rManual" class="noprint" style="margin-top:10px;"></div>
-        <div id="rDoc" style="margin-top:12px;"></div>
+        <div id="rDoc" style="margin-top:12px;">
+          <div class="muted">Choose a document and a date above, then press
+          “Create / refresh from records”. The document appears here for review,
+          manual values, printing and submission.</div>
+        </div>
       </div>
       ${mgr ? `
       <div class="panel noprint"><h2 style="margin-top:0">Therapists</h2>
@@ -210,23 +229,23 @@
         <div id="driveBody" class="muted">Loading…</div></div>` : ''}
     `;
 
+    $('#rGen').addEventListener('click', () => busy($('#rGen'), 'Working…', () => loadReport(true)));
+    $('#rLoad').addEventListener('click', () => busy($('#rLoad'), 'Opening…', () => loadReport(false)));
     $('#boLogout').addEventListener('click', async () => { await TB.logout(); state.user = null; render(); });
     $('#boChangePw').addEventListener('click', () => {
       const p = $('#boPwPanel');
       if (p.innerHTML) { p.innerHTML = ''; return; }
       p.innerHTML = `<div class="panel" style="max-width:460px;">
         <h2 style="margin-top:0">Change password</h2>${passwordFormHtml('normal')}</div>`;
-      $('#pwGo').addEventListener('click', async () => {
+      $('#pwGo').addEventListener('click', () => busy($('#pwGo'), 'Changing…', async () => {
         if (await submitPasswordChange()) {
           p.innerHTML = '<div class="panel" style="max-width:460px;"><span class="ok">Password changed. Your other devices will need the new password.</span></div>';
           setTimeout(() => { if ($('#boPwPanel')) $('#boPwPanel').innerHTML = ''; }, 5000);
         }
-      });
+      }));
       $('#pwCur').focus();
     });
     $('#fApply').addEventListener('click', loadSessions);
-    $('#rGen').addEventListener('click', () => loadReport(true));
-    $('#rLoad').addEventListener('click', () => loadReport(false));
     loadSessions();
     if (mgr) { loadTasks(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
 
@@ -254,7 +273,7 @@
           <td>${esc(u.id)}</td><td>${esc(u.name)}</td><td>${esc(u.role)}</td>
           <td>${u.role === 'receptionist'
             ? `<button class="btn uReset" data-id="${esc(u.id)}" data-name="${esc(u.name)}">Reset password</button>`
-            : '<span class="muted">CLI only</span>'}</td>
+            : '<span class="muted" title="Manager passwords can only be reset by the administrator, from the server — not in the app.">ask administrator</span>'}</td>
         </tr>`).join('')}</tbody></table></div>
       <div id="uResetOut"></div>`;
     host.querySelectorAll('.uReset').forEach((b) =>
@@ -301,7 +320,10 @@
         <td>${esc(r.receptionistName)}</td>
         <td><button class="btn boEdit" data-id="${esc(r.id)}">Edit</button></td>
       </tr>`).join('');
-      $('#sessRows').innerHTML = rows || '<tr><td colspan="13" class="muted">No records in this range.</td></tr>';
+      $('#sessRows').innerHTML = rows ||
+        `<tr><td colspan="13" class="muted">No records between ${esc($('#fFrom').value)} and ${esc($('#fTo').value)}.
+         Waivers submitted on the iPad appear here automatically — try a wider date range, or clear the
+         receptionist/therapist filters.</td></tr>`;
       const net = out.records.reduce((s, r) => s + (Number(r.net) || 0), 0);
       const comm = out.records.reduce((s, r) => s + (Number(r.commission) || 0), 0);
       const bpi = out.records.reduce((s, r) => s + (r.paymentMethod === 'bpi' ? Number(r.net) || 0 : 0), 0);
@@ -341,17 +363,17 @@
           <option value="cash" ${r.paymentMethod !== 'bpi' ? 'selected' : ''}>Cash</option>
           <option value="bpi" ${r.paymentMethod === 'bpi' ? 'selected' : ''}>BPI (card)</option></select></div>
         <div><label>Commission</label><input id="eComm" type="number" step="0.01" min="0" value="${esc(r.commission)}" style="width:110px" /></div>
-        <button id="eAuto" class="btn" title="rate × net price">Auto</button>
+        <button id="eAuto" class="btn" title="Fill from the therapist's commission rate × the price paid">Calculate (rate × price)</button>
         <button id="eSave" class="btn primary">Save</button>
         <button id="eCancel" class="btn">Cancel</button>
-        <span id="eMsg"></span>
+        <span id="eMsg" role="status"></span>
       </div></div>`;
     $('#eAuto').addEventListener('click', () => {
       const t = state.therapists.find((x) => x.id === $('#eTher').value);
       if (t) $('#eComm').value = Math.round((t.commissionRate || 0) * (Number(r.net) || 0) * 100) / 100;
     });
     $('#eCancel').addEventListener('click', () => { $('#sessEdit').innerHTML = ''; });
-    $('#eSave').addEventListener('click', async () => {
+    $('#eSave').addEventListener('click', () => busy($('#eSave'), 'Saving…', async () => {
       $('#eMsg').textContent = 'Saving…';
       try {
         const upd = {
@@ -367,11 +389,15 @@
         };
         await TB.api('/api/sessions/sync', { method: 'POST', body: { records: [upd] } });
         $('#sessEdit').innerHTML = '';
-        loadSessions();
+        await loadSessions(); // refresh writes its own count into #fMsg…
+        const m = $('#fMsg');  // …then prepend the success confirmation
+        m.className = 'ok';
+        m.textContent = 'Saved ✓ · ' + m.textContent;
+        setTimeout(() => { if (m.isConnected) m.className = 'muted'; }, 3000);
       } catch (e) {
         $('#eMsg').className = 'err'; $('#eMsg').textContent = e.message;
       }
-    });
+    }));
   }
 
   // --------------------------------------------------------------- reports
@@ -419,7 +445,7 @@
     $('#rDoc').innerHTML = TBDoc.render(r.type, r, state.branchCfg, state.logoSrc);
     renderManualEditor();
 
-    $('#aPdf').addEventListener('click', async () => {
+    $('#aPdf').addEventListener('click', () => busy($('#aPdf'), 'Preparing PDF…', async () => {
       try {
         const blob = await TB.api(`/api/reports/${r.type}/${r.period}/pdf`);
         const url = URL.createObjectURL(blob);
@@ -428,19 +454,27 @@
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 2000);
       } catch (e) { alert('PDF failed: ' + e.message); }
-    });
+    }));
     $('#aPrint').addEventListener('click', () => window.print());
-    if ($('#aSubmit')) $('#aSubmit').addEventListener('click', async () => {
-      if (!confirm('Submit this document for manager approval?')) return;
-      state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/submit`, { method: 'POST' })).report;
-      renderReport();
-    });
-    if ($('#aApprove')) $('#aApprove').addEventListener('click', async () => {
-      if (!confirm('Approve this document? Your stored signature will be stamped on it and an immutable copy saved.')) return;
-      state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/approve`, { method: 'POST' })).report;
-      renderReport();
-      loadTasks();
-    });
+    if ($('#aSubmit')) $('#aSubmit').addEventListener('click', () => busy($('#aSubmit'), 'Submitting…', async () => {
+      if (!confirm('Submit this document for manager approval?\n\nThe manager will see it in the Tasks list, review it, and approve it. You can still make changes until it is approved.')) return;
+      try {
+        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/submit`, { method: 'POST' })).report;
+        renderReport();
+        const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Submitted ✓ — waiting for manager approval';
+        const mine465 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine465) { m.className = 'muted'; m.textContent = ''; } }, 5000);
+      } catch (e) { alert('Submit failed: ' + e.message); }
+    }));
+    if ($('#aApprove')) $('#aApprove').addEventListener('click', () => busy($('#aApprove'), 'Approving…', async () => {
+      if (!confirm('Approve this document?\n\nYour stored signature and the date will be stamped on it, and a permanent copy is saved that can never be edited (corrections later create a new version).')) return;
+      try {
+        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/approve`, { method: 'POST' })).report;
+        renderReport();
+        loadTasks();
+        const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Approved ✓ — signed and archived';
+        const mine475 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine475) { m.className = 'muted'; m.textContent = ''; } }, 5000);
+      } catch (e) { alert('Approve failed: ' + e.message); }
+    }));
   }
 
   // Manual value editors. Only controls the user actually changes are sent
@@ -452,9 +486,17 @@
       host.innerHTML = '<div class="muted">Approved documents are locked. Generate to start a new version if a correction is needed.</div>';
       return;
     }
-    if (r.type === 'weekly-payroll') return payrollEditor(host, r);
-    if (r.type === 'weekly-sales') return salesEditor(host, r);
-    return commissionEditor(host, r);
+    if (r.type === 'weekly-payroll') payrollEditor(host, r);
+    else if (r.type === 'weekly-sales') salesEditor(host, r);
+    else commissionEditor(host, r);
+
+    // Keep the editor's open/closed state across re-renders (saving manual
+    // values regenerates the document; the panel must not snap shut).
+    const details = host.querySelector('details');
+    if (details) {
+      details.open = !!state.manualOpen;
+      details.addEventListener('toggle', () => { state.manualOpen = details.open; });
+    }
   }
 
   function markDirty(e) { e.target.dataset.dirty = '1'; }
@@ -493,7 +535,7 @@
       </div></details>`;
 
     host.querySelectorAll('input,select').forEach((el) => el.addEventListener('change', markDirty));
-    $('#pSave').addEventListener('click', async () => {
+    $('#pSave').addEventListener('click', () => busy($('#pSave'), 'Saving…', async () => {
       const patch = { therapists: {} };
       const T = (tid) => (patch.therapists[tid] = patch.therapists[tid] || {});
       host.querySelectorAll('.pDay[data-dirty]').forEach((el) => {
@@ -523,7 +565,7 @@
         T(el.dataset.t).allowance = Number(el.value) || 0;
       });
       await saveManual(patch, '#pMsg');
-    });
+    }));
   }
 
   function salesEditor(host, r) {
@@ -543,7 +585,7 @@
         <span id="sMsg"></span>
       </div></details>`;
     host.querySelectorAll('input').forEach((el) => el.addEventListener('change', markDirty));
-    $('#sSave').addEventListener('click', async () => {
+    $('#sSave').addEventListener('click', () => busy($('#sSave'), 'Saving…', async () => {
       const patch = { days: {} };
       host.querySelectorAll('.sIn[data-dirty]').forEach((el) => {
         const d = (patch.days[el.dataset.date] = patch.days[el.dataset.date] || {});
@@ -552,7 +594,7 @@
       const by = $('#sInputBy');
       if (by.dataset.dirty && by.value !== '') patch.rawDataInputBy = by.value;
       await saveManual(patch, '#sMsg');
-    });
+    }));
   }
 
   function commissionEditor(host, r) {
@@ -577,7 +619,7 @@
         <button id="cSave" class="btn primary">Save manual values</button><span id="cMsg"></span>
       </div></details>`;
     host.querySelectorAll('input').forEach((el) => el.addEventListener('change', markDirty));
-    $('#cSave').addEventListener('click', async () => {
+    $('#cSave').addEventListener('click', () => busy($('#cSave'), 'Saving…', async () => {
       const patch = { rows: {} };
       host.querySelectorAll('.cIn[data-dirty]').forEach((el) => {
         const k = el.dataset.k;
@@ -586,7 +628,7 @@
         bp[el.dataset.f] = el.dataset.f === 'stubNumber' ? el.value : Number(el.value) || 0;
       });
       await saveManual(patch, '#cMsg');
-    });
+    }));
   }
 
   async function saveManual(patch, msgSel) {
@@ -597,7 +639,10 @@
       state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/manual-values`, {
         method: 'POST', body: patch,
       })).report;
-      renderReport();
+      renderReport(); // document + totals recalculate; editor stays open
+      const m = $('#rMsg');
+      m.className = 'ok'; m.textContent = 'Manual values saved ✓ — totals updated';
+      const mine645 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine645) { m.className = 'muted'; m.textContent = ''; } }, 4000);
     } catch (e) {
       el.className = 'err'; el.textContent = e.message;
     }
@@ -649,7 +694,8 @@
     host.innerHTML = `
       <div class="tableWrap"><table>
         <thead><tr><th>ID</th><th>Full name</th><th>Rest day</th><th>Rate</th><th></th></tr></thead>
-        <tbody>${active.map(row).join('') || '<tr><td colspan="5" class="muted">No active therapists.</td></tr>'}</tbody>
+        <tbody>${active.map(row).join('') ||
+          '<tr><td colspan="5" class="muted">No therapists yet — add the first one with the form below. They then appear in the session editor and on payroll.</td></tr>'}</tbody>
       </table></div>
       ${inactive.length ? `
       <details style="margin-top:10px;"><summary class="btn" style="display:inline-block">Inactive (${inactive.length})</summary>
@@ -659,15 +705,42 @@
         </table></div>
         <div class="muted" style="margin-top:6px;">Inactive therapists are hidden from new reports and pickers; their rows in historical documents are unchanged.</div>
       </details>` : ''}
-      <div class="row" style="margin-top:10px;">
-        <div><label>New id</label><input id="tNewId" style="width:100px" placeholder="t-ana" /></div>
-        <div><label>Full name</label><input id="tNewName" /></div>
-        <button id="tAdd" class="btn primary">Add therapist</button><span id="tMsg" role="alert"></span>
+      <div class="panel" style="background:#f8fafc;margin-top:12px;">
+        <b>Add a therapist</b>
+        <div class="row" style="margin-top:8px;">
+          <div><label for="tNewName">Full name</label><input id="tNewName" placeholder="e.g. Ana Cruz" /></div>
+          <div><label for="tNewId">ID <span class="muted">(suggested — you can change it)</span></label>
+            <input id="tNewId" style="width:130px" placeholder="t-ana" /></div>
+          <div><label for="tNewRest">Fixed rest day</label><select id="tNewRest">
+            ${REST_DAYS.map((d) => `<option value="${d}">${d || '(none)'}</option>`).join('')}
+          </select></div>
+          <div><label for="tNewRate">Commission rate (0–1, e.g. 0.4 = 40%)</label>
+            <input id="tNewRate" type="number" step="0.01" min="0" max="1" value="0.4" style="width:100px" /></div>
+          <div><label for="tNewActive">Active</label><input id="tNewActive" type="checkbox" checked /></div>
+          <button id="tAdd" class="btn primary">Add therapist</button>
+          <span id="tMsg" role="alert"></span>
+        </div>
       </div>
       <div id="tEditor"></div>`;
 
     const refresh = (out) => { state.therapists = out.therapists; renderTherapists(); };
     const fail = (e) => { $('#tMsg').className = 'err'; $('#tMsg').textContent = e.message; };
+    const note = (text) => {
+      const m = $('#tMsg'); m.className = 'ok'; m.textContent = text;
+      const mine730 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine730) { m.className = ''; m.textContent = ''; } }, 4000);
+    };
+
+    // Suggest an ID from the name while the manager hasn't typed one herself.
+    const idInput = $('#tNewId'), nameInput = $('#tNewName');
+    idInput.addEventListener('input', () => { idInput.dataset.manual = '1'; });
+    nameInput.addEventListener('input', () => {
+      if (idInput.dataset.manual) return;
+      const first = (nameInput.value.trim().split(/\s+/)[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!first) { idInput.value = ''; return; }
+      let candidate = 't-' + first, n = 2;
+      while (state.therapists.some((x) => x.id === candidate)) candidate = 't-' + first + n++;
+      idInput.value = candidate;
+    });
 
     // ---- full editor for every field
     host.querySelectorAll('.tEdit').forEach((b) => b.addEventListener('click', () => {
@@ -696,7 +769,7 @@
         </div>
         <div id="teProgress"></div></div>`;
       $('#teCancel').addEventListener('click', () => { $('#tEditor').innerHTML = ''; });
-      $('#teSave').addEventListener('click', async () => {
+      $('#teSave').addEventListener('click', () => busy($('#teSave'), 'Saving…', async () => {
         const msg = $('#teMsg'); msg.textContent = '';
         const newIdRaw = $('#teId').value.trim();
         const fullName = $('#teName').value.trim();
@@ -740,21 +813,21 @@
           renderTherapists();
           if (currentId !== t.id) loadSessions(); // ids in the sessions table changed
         } catch (e) {
-          $('#teSave').disabled = false;
           $('#teProgress').innerHTML = '';
           msg.textContent = e.message;
         }
-      });
+      }));
     }));
 
     // ---- reactivate
-    host.querySelectorAll('.tReact').forEach((b) => b.addEventListener('click', async () => {
+    host.querySelectorAll('.tReact').forEach((b) => b.addEventListener('click', () => busy(b, 'Reactivating…', async () => {
       try {
         refresh(await TB.api('/api/therapists/' + encodeURIComponent(b.dataset.id), {
           method: 'PATCH', body: { active: true },
         }));
+        note(`${b.closest('tr').children[1].textContent} reactivated ✓ — back in pickers and new reports.`);
       } catch (e) { fail(e); }
-    }));
+    })));
 
     // ---- remove: deactivate when referenced, hard-delete only when clean
     host.querySelectorAll('.tRemove').forEach((b) => b.addEventListener('click', async () => {
@@ -774,6 +847,7 @@
             refresh(await TB.api('/api/therapists/' + encodeURIComponent(id), {
               method: 'PATCH', body: { active: false },
             }));
+            note(`${name} deactivated ✓ — moved to the Inactive list below.`);
           }
         } else {
           const typed = prompt(
@@ -783,19 +857,39 @@
           if (typed === null) return;
           if (typed.trim() !== name) { fail(new Error('Name did not match — nothing was deleted.')); return; }
           refresh(await TB.api('/api/therapists/' + encodeURIComponent(id), { method: 'DELETE' }));
+          note(`${name} permanently deleted ✓`);
         }
       } catch (e) { fail(e); }
       finally { b.disabled = false; }
     }));
 
-    $('#tAdd').addEventListener('click', async () => {
+    $('#tAdd').addEventListener('click', () => busy($('#tAdd'), 'Adding…', async () => {
+      const m = $('#tMsg'); m.className = 'err'; m.textContent = '';
+      const fullName = $('#tNewName').value.trim();
+      const id = $('#tNewId').value.trim();
+      const rate = Number($('#tNewRate').value);
+      // same validation as the Edit dialog, checked here so mistakes surface
+      // immediately instead of after a server round-trip
+      if (!fullName) { m.textContent = 'Full name cannot be empty.'; return; }
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(id)) {
+        m.textContent = 'ID must be 1–32 characters: letters, digits, hyphen, underscore.'; return;
+      }
+      if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+        m.textContent = 'Commission rate must be between 0 and 1 (e.g. 0.4).'; return;
+      }
       try {
         refresh(await TB.api('/api/therapists', {
           method: 'POST',
-          body: { id: $('#tNewId').value.trim(), fullName: $('#tNewName').value.trim() },
+          body: {
+            id, fullName,
+            restDay: $('#tNewRest').value,
+            commissionRate: rate,
+            active: $('#tNewActive').checked,
+          },
         }));
+        note(`${fullName} added ✓ — ready to assign in the session editor.`);
       } catch (e) { fail(e); }
-    });
+    }));
   }
 
   async function loadDrive() {
@@ -804,7 +898,7 @@
       $('#driveBody').innerHTML = s.enabled
         ? `Mirror is ON. Pending uploads: <b>${s.pending}</b>
            ${s.pending ? '<button id="driveRetry" class="btn" style="margin-left:8px">Retry now</button>' : ''}`
-        : 'Mirror is switched off (DRIVE_ENABLED=false on the server).';
+        : 'Mirror is switched off — an administrator can enable it on the server (see SETUP guide).';
       const b = $('#driveRetry');
       if (b) b.addEventListener('click', async () => {
         b.disabled = true;
