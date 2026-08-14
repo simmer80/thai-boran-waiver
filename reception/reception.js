@@ -9,16 +9,9 @@
   const RECEPTION_PIN = '2512';
   const PHOTO_ONE_KEY = 'tb_photo_capture_enabled';
   const PHOTO_PERM_KEY = 'tb_photo_capture_permanent_disabled';
-  const PRICE_SETS_KEY = 'tb_price_sets_v1';
-  const PRICE_LOCKED_KEY = 'tb_price_locked_v1';
   const DB_NAME = 'thai_boran_waiver_db';
   const STORE = 'submissions';
 
-  const SERVICES = [
-    '1hr Thai Back Massage', '1hr Thai Body Massage', '1hr Thai Foot Massage', '1hr Thai Swedish Massage',
-    '1hr Swedish Massage', '1hr Thai Aromatherapy Massage',
-    'Combo 1', 'Combo 2', 'Combo 3', 'Combo 4', 'Combo 5', 'Combo 6', 'Combo 7', 'Combo 8',
-  ];
   const ADD_ONS = ['Unscented Oil', 'Scented Oil', 'Herbal Hotpads', 'Ventosa', 'Hot Stone', 'Half Hour', '1 hr extra massage'];
 
   const $ = (id) => document.getElementById(id);
@@ -47,63 +40,6 @@
     st.textContent = photoModeText();
     st.style.color = (!permOff() && oneOn()) ? '#0a7a2a' : '#b00020';
     st.style.fontWeight = '700';
-  }
-
-  // ---------------------------------------------------------------- prices
-  function loadPriceSets() {
-    try { const a = JSON.parse(localStorage.getItem(PRICE_SETS_KEY) || '[]'); return Array.isArray(a) ? a : []; }
-    catch { return []; }
-  }
-  function ensureInitialPriceSet() {
-    const sets = loadPriceSets();
-    if (sets.length) return sets;
-    const services = {}, addons = {};
-    SERVICES.forEach((n) => (services[n] = 0));
-    ADD_ONS.forEach((n) => (addons[n] = 0));
-    const initial = [{ effectiveFrom: '1970-01-01', services, addons }];
-    localStorage.setItem(PRICE_SETS_KEY, JSON.stringify(initial));
-    return initial;
-  }
-  const pricesLocked = () => localStorage.getItem(PRICE_LOCKED_KEY) !== '0';
-
-  function renderPrices() {
-    const sets = ensureInitialPriceSet();
-    const cur = sets.slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).at(-1);
-    const locked = pricesLocked();
-    const row = (type, name, val) => `<tr><td>${esc(name)}</td><td>${type === 's' ? 'Service' : 'Add-On'}</td>
-      <td><input data-pt="${type}" data-pn="${esc(name)}" type="number" step="1" min="0" value="${val}" style="width:110px" ${locked ? 'disabled' : ''} /></td></tr>`;
-    $('localPanels').innerHTML = `<div class="panel" style="background:#f8fafc;">
-      <b>Price list</b> — ${locked ? `locked (effective from ${esc(cur.effectiveFrom)})` : 'editing — change prices then Save and Lock'}
-      <div class="tableWrap" style="max-height:280px;overflow:auto;margin-top:8px;"><table>
-        <thead><tr><th>Item</th><th>Type</th><th>Price</th></tr></thead><tbody>
-        ${SERVICES.map((n) => row('s', n, cur.services[n] ?? 0)).join('')}
-        ${ADD_ONS.map((n) => row('a', n, cur.addons[n] ?? 0)).join('')}
-        </tbody></table></div>
-      <div class="row" style="margin-top:8px;">
-        <button id="pEdit" class="btn" ${locked ? '' : 'disabled'}>Edit Prices</button>
-        <button id="pSaveLock" class="btn primary" ${locked ? 'disabled' : ''}>Save and Lock</button>
-        <span class="muted">New prices apply from today onward; older waivers keep their dated prices.</span>
-      </div></div>`;
-    $('pEdit').addEventListener('click', () => {
-      if (!confirm('Unlock prices for editing?')) return;
-      localStorage.setItem(PRICE_LOCKED_KEY, '0');
-      renderPrices();
-    });
-    $('pSaveLock').addEventListener('click', () => {
-      if (!confirm('Save prices and lock? New prices apply starting today.')) return;
-      const services = { ...cur.services }, addons = { ...cur.addons };
-      $('localPanels').querySelectorAll('input[data-pt]').forEach((inp) => {
-        const v = Number(inp.value) || 0;
-        if (inp.dataset.pt === 's') services[inp.dataset.pn] = v;
-        else addons[inp.dataset.pn] = v;
-      });
-      const d = new Date();
-      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      sets.push({ effectiveFrom: today, services, addons });
-      localStorage.setItem(PRICE_SETS_KEY, JSON.stringify(sets));
-      localStorage.setItem(PRICE_LOCKED_KEY, '1');
-      renderPrices();
-    });
   }
 
   // -------------------------------------------- local records (add add-ons)
@@ -199,7 +135,6 @@
       localStorage.setItem(PHOTO_PERM_KEY, permOff() ? '0' : '1');
       refreshButtons();
     });
-    $('btnPrices').addEventListener('click', renderPrices);
     $('btnEditRecords').addEventListener('click', renderRecords);
   }
 
