@@ -59,6 +59,7 @@
   <script src="./reception.js"></script>
   <script>
     TB.injectNav('reception');
+    TB.refreshPrices(); // keep this device's shared-price cache current
     TBReception.init();
     TBBackoffice.init({ managerMode: false, mount: document.getElementById('backoffice'), logoSrc: '../assets/thai_boran_logo.png' });
     if ('serviceWorker' in navigator) {

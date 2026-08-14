@@ -55,6 +55,7 @@
     const user = window.TB && TB.cachedUser();
     return {
       id: r.id,
+      siteId: r.siteId || (window.TB && TB.deviceSite()) || 'panacan',
       createdAt: r.createdAt,
       updatedAt: r.updatedAt || r.createdAt,
       date: r.date,

@@ -322,6 +322,18 @@ Monday to Friday &amp; Holidays
   <script>
     TB.injectNav('waiver');
     TBSync.init();
+    // Shared prices: refresh the local cache from the server; the till keeps
+    // charging from the last-known cache when offline.
+    document.addEventListener('tb:prices', (e) => {
+      if (!e.detail.changed) return;
+      const m = document.getElementById('submitMsg');
+      if (!m) return;
+      m.textContent = 'Prices updated from the server ✓';
+      m.style.color = '#0a7a2a'; m.style.fontWeight = '700';
+      setTimeout(() => { if (m.textContent.startsWith('Prices updated')) m.textContent = ''; }, 5000);
+      if (typeof updateTotalPreview === 'function') updateTotalPreview();
+    });
+    TB.refreshPrices();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js');
     }

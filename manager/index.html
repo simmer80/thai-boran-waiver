@@ -104,6 +104,21 @@
     <div id="mgrCard" class="card hidden">
             <div class="section">
 
+        <!-- Device setting: which parlor THIS device belongs to. Waivers
+             captured here are stamped with it; the document screens default
+             to it. Manager-gated (this section unlocks via manager login or
+             the device PIN offline fallback). -->
+        <div class="row" style="gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+          <b>This device's parlor:</b>
+          <select id="deviceSite" style="font-size:16px;padding:8px;">
+            <option value="">(not set — records default to Panacan)</option>
+            <option value="panacan">Thai Boran — Panacan</option>
+            <option value="airport-road">Thai Boran — Airport Road</option>
+          </select>
+          <span id="deviceSiteMsg" class="small"></span>
+        </div>
+        <div class="hr"></div>
+
         <div class="row" style="justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
                     <div class="row" style="gap:10px; flex-wrap: wrap;">
             <button id="tabWaiver" class="btn" type="button">Waiver</button>
@@ -215,32 +230,11 @@
           <div class="hr" style="margin-top:12px;"></div>
 
           <div style="margin-top:10px;">
-            <div class="row" style="justify-content: space-between; gap:10px; flex-wrap: wrap;">
-              <div>
-                <div class="small">Price control</div>
-                <div id="priceStatus" class="tapHint"></div>
-              </div>
-              <div class="row" style="gap:10px; flex-wrap: wrap;">
-                <button id="btnPricesEdit" class="btn" type="button">Edit Prices</button>
-                <button id="btnPricesSaveLock" class="btn primary" type="button">Save and Lock</button>
-              </div>
-            </div>
-
-                        <div class="tableWrap priceWrap" style="margin-top:10px;">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Type</th>
-                    <th>Price</th>
-                  </tr>
-                </thead>
-                <tbody id="priceRows"></tbody>
-              </table>
-            </div>
-
-            <div class="tapHint" style="margin-top:8px;">
-              When you Save and Lock, a new price set starts today and is used for all new waivers from today onward.
+            <div class="small">Price control</div>
+            <div class="tapHint">
+              Prices are now shared by both parlors and edited in the
+              <b>Prices</b> panel of the server section above (manager sign-in).
+              This device's local sales view uses the shared prices automatically.
             </div>
           </div>
 
@@ -323,6 +317,7 @@
   <script src="./manager.js"></script>
   <script>
     TB.injectNav('manager');
+    TB.refreshPrices(); // keep this device's shared-price cache current
     TBBackoffice.init({ managerMode: true, mount: document.getElementById('backoffice'), logoSrc: '../assets/thai_boran_logo.png' });
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("../sw.js");

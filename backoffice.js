@@ -27,7 +27,20 @@
     user: null, therapists: [], users: [], branchCfg: {},
     report: null, reportType: 'daily-commission', reportPeriod: '',
     sessions: [], editingId: null,
+    site: '',            // which parlor's data this screen shows
+    prices: [],          // org-shared price sets (server copy, manager panel)
   };
+
+  const SITE_LABELS = { 'panacan': 'Panacan', 'airport-road': 'Airport Road' };
+  const PDF_SITE = { 'panacan': 'Panacan', 'airport-road': 'AirportRoad' };
+  const PDF_DOC = {
+    'daily-commission': 'Daily-Commission',
+    'weekly-payroll': 'Weekly-Payroll',
+    'weekly-sales': 'Weekly-Sales',
+  };
+  const siteBadge = (site, big) =>
+    `<span class="site-badge${big ? ' big' : ''}">Thai Boran — ${esc(SITE_LABELS[site] || site || '?')}</span>`;
+  const siteQ = () => 'site=' + encodeURIComponent(state.site);
 
   // Wrap an async click action: the button disables (and can relabel) while
   // the work runs, so double-clicks can never fire it twice.
@@ -158,12 +171,17 @@
   }
 
   async function loadBasics() {
-    const [t, u, c] = await Promise.all([
-      TB.api('/api/therapists'), TB.api('/api/users'), TB.api('/api/branch-config'),
-    ]);
+    // default site: the device's own parlor (iPads); the laptop has none and
+    // the manager picks per view
+    if (!state.site) state.site = TB.deviceSite();
+    if (!state.site && !state.managerMode) state.site = 'panacan';
+    const [t, u] = await Promise.all([TB.api('/api/therapists'), TB.api('/api/users')]);
     state.therapists = t.therapists;
     state.users = u.users;
-    state.branchCfg = c.config || {};
+    if (state.site) {
+      const c = await TB.api('/api/branch-config?' + siteQ());
+      state.branchCfg = c.config || {};
+    }
   }
 
   function renderMain() {
@@ -177,7 +195,20 @@
         </div>
       </div>
       <div id="boPwPanel" class="noprint"></div>
-      ${mgr ? '<div id="boTasks" class="panel noprint"><h2 style="margin-top:0">Tasks — awaiting approval</h2><div id="boTasksBody" class="muted">Loading…</div></div>' : ''}
+      <div class="panel noprint" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <b>Parlor:</b>
+        ${mgr
+          ? `<select id="boSite" style="font-size:16px;padding:8px;">
+              <option value="">— choose parlor —</option>
+              ${Object.entries(SITE_LABELS).map(([id, l]) =>
+                `<option value="${id}" ${state.site === id ? 'selected' : ''}>Thai Boran — ${esc(l)}</option>`).join('')}
+             </select>`
+          : siteBadge(state.site, true)}
+        <span class="muted">${mgr
+          ? 'Sessions and documents below belong to the selected parlor. Tasks always show both parlors, each entry labelled.'
+          : 'This device belongs to this parlor; its waivers and documents are shown below.'}</span>
+      </div>
+      ${mgr ? '<div id="boTasks" class="panel noprint"><h2 style="margin-top:0">Tasks — awaiting approval <span class="muted" style="font-size:12px;">(both parlors)</span></h2><div id="boTasksBody" class="muted">Loading…</div></div>' : ''}
       <div class="panel noprint">
         <h2 style="margin-top:0">Sessions &amp; sales</h2>
         <div class="row">
@@ -221,13 +252,25 @@
         </div>
       </div>
       ${mgr ? `
-      <div class="panel noprint"><h2 style="margin-top:0">Therapists</h2>
+      <div class="panel noprint"><h2 style="margin-top:0">Prices <span class="muted" style="font-size:12px;">(shared — both parlors charge the same)</span></h2>
+        <div id="pricesBody" class="muted">Loading…</div></div>
+      <div class="panel noprint"><h2 style="margin-top:0">Therapists <span class="muted" style="font-size:12px;">(shared — staff rotate between parlors)</span></h2>
         <div id="thBody"></div></div>
       <div class="panel noprint"><h2 style="margin-top:0">Users &amp; passwords</h2>
         <div id="usersBody"></div></div>
       <div class="panel noprint"><h2 style="margin-top:0">Google Drive mirror</h2>
         <div id="driveBody" class="muted">Loading…</div></div>` : ''}
     `;
+    if (mgr) {
+      $('#boSite').addEventListener('change', async () => {
+        state.site = $('#boSite').value;
+        state.report = null;
+        if (state.site) {
+          try { state.branchCfg = (await TB.api('/api/branch-config?' + siteQ())).config || {}; } catch (_) {}
+        }
+        renderMain();
+      });
+    }
 
     $('#rGen').addEventListener('click', () => busy($('#rGen'), 'Working…', () => loadReport(true)));
     $('#rLoad').addEventListener('click', () => busy($('#rLoad'), 'Opening…', () => loadReport(false)));
@@ -246,8 +289,14 @@
       $('#pwCur').focus();
     });
     $('#fApply').addEventListener('click', loadSessions);
-    loadSessions();
-    if (mgr) { loadTasks(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
+    if (state.site) {
+      loadSessions();
+    } else {
+      $('#fMsg').textContent = '';
+      $('#sessRows').innerHTML = '<tr><td colspan="13" class="muted">Choose a parlor above to see its sessions and documents.</td></tr>';
+      $('#rMsg').textContent = 'Choose a parlor above first.';
+    }
+    if (mgr) { loadTasks(); renderPricesAdmin(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
 
     // Tell the page a server-verified user is present: the local device
     // sections (reception settings / manager device history) unlock off this
@@ -300,9 +349,11 @@
 
   // -------------------------------------------------------------- sessions
   async function loadSessions() {
+    if (!state.site) return;
     $('#fMsg').textContent = 'Loading…';
     try {
       const q = new URLSearchParams({
+        site: state.site,
         from: $('#fFrom').value, to: $('#fTo').value || $('#fFrom').value,
       });
       if ($('#fRec').value) q.set('receptionistId', $('#fRec').value);
@@ -387,7 +438,7 @@
           commissionManual: true,
           updatedAt: Date.now(),
         };
-        await TB.api('/api/sessions/sync', { method: 'POST', body: { records: [upd] } });
+        await TB.api('/api/sessions/sync?' + siteQ(), { method: 'POST', body: { records: [upd] } });
         $('#sessEdit').innerHTML = '';
         await loadSessions(); // refresh writes its own count into #fMsg…
         const m = $('#fMsg');  // …then prepend the success confirmation
@@ -406,6 +457,7 @@
   }
 
   async function loadReport(generate) {
+    if (!state.site) { $('#rMsg').className = 'err'; $('#rMsg').textContent = 'Choose a parlor first (top of the page).'; return; }
     const type = $('#rType').value;
     const period = periodFor(type, $('#rPeriod').value || todayISO());
     state.reportType = type; state.reportPeriod = period;
@@ -413,9 +465,9 @@
     try {
       let report;
       if (generate) {
-        report = (await TB.api(`/api/reports/${type}/${period}/generate`, { method: 'POST' })).report;
+        report = (await TB.api(`/api/reports/${type}/${period}/generate?` + siteQ(), { method: 'POST' })).report;
       } else {
-        report = (await TB.api(`/api/reports/${type}/${period}`)).report;
+        report = (await TB.api(`/api/reports/${type}/${period}?` + siteQ())).report;
       }
       state.report = report;
       $('#rMsg').textContent = '';
@@ -430,7 +482,7 @@
   function renderReport() {
     const r = state.report;
     if (!r) return;
-    $('#rStatus').innerHTML = `<b>${esc(TYPE_LABELS[r.type])}</b> — ${esc(r.period)} — version ${r.version} —
+    $('#rStatus').innerHTML = `${siteBadge(state.site, true)} <b>${esc(TYPE_LABELS[r.type])}</b> — ${esc(r.period)} — version ${r.version} —
       <span class="status-${esc(r.status)}">${esc(r.status.toUpperCase())}</span>
       ${r.submittedByName ? ` · submitted by ${esc(r.submittedByName)}` : ''}
       ${r.approvedByName ? ` · approved by ${esc(r.approvedByName)} at ${esc(r.approvedAt)}` : ''}`;
@@ -447,10 +499,10 @@
 
     $('#aPdf').addEventListener('click', () => busy($('#aPdf'), 'Preparing PDF…', async () => {
       try {
-        const blob = await TB.api(`/api/reports/${r.type}/${r.period}/pdf`);
+        const blob = await TB.api(`/api/reports/${r.type}/${r.period}/pdf?` + siteQ());
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `${r.type}_${r.period}_v${r.version}.pdf`;
+        a.href = url; a.download = `ThaiBoran-${PDF_SITE[state.site] || state.site}_${PDF_DOC[r.type]}_${r.period}${r.status === 'approved' ? '_approved' : ''}.pdf`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 2000);
       } catch (e) { alert('PDF failed: ' + e.message); }
@@ -459,16 +511,16 @@
     if ($('#aSubmit')) $('#aSubmit').addEventListener('click', () => busy($('#aSubmit'), 'Submitting…', async () => {
       if (!confirm('Submit this document for manager approval?\n\nThe manager will see it in the Tasks list, review it, and approve it. You can still make changes until it is approved.')) return;
       try {
-        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/submit`, { method: 'POST' })).report;
+        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/submit?` + siteQ(), { method: 'POST' })).report;
         renderReport();
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Submitted ✓ — waiting for manager approval';
         const mine465 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine465) { m.className = 'muted'; m.textContent = ''; } }, 5000);
       } catch (e) { alert('Submit failed: ' + e.message); }
     }));
     if ($('#aApprove')) $('#aApprove').addEventListener('click', () => busy($('#aApprove'), 'Approving…', async () => {
-      if (!confirm('Approve this document?\n\nYour stored signature and the date will be stamped on it, and a permanent copy is saved that can never be edited (corrections later create a new version).')) return;
+      if (!confirm(`Approve this ${SITE_LABELS[state.site] || state.site} document?\n\nYour stored signature and the date will be stamped on it, and a permanent copy is saved that can never be edited (corrections later create a new version).`)) return;
       try {
-        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/approve`, { method: 'POST' })).report;
+        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/approve?` + siteQ(), { method: 'POST' })).report;
         renderReport();
         loadTasks();
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Approved ✓ — signed and archived';
@@ -636,7 +688,7 @@
     el.className = 'muted'; el.textContent = 'Saving…';
     try {
       const r = state.report;
-      state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/manual-values`, {
+      state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/manual-values?` + siteQ(), {
         method: 'POST', body: patch,
       })).report;
       renderReport(); // document + totals recalculate; editor stays open
@@ -654,18 +706,24 @@
     try {
       const out = await TB.api('/api/tasks');
       $('#boTasksBody').innerHTML = out.tasks.length
-        ? `<table><thead><tr><th>Document</th><th>Period</th><th>Submitted by</th><th>When</th><th></th></tr></thead><tbody>
+        ? `<table><thead><tr><th>Parlor</th><th>Document</th><th>Period</th><th>Submitted by</th><th>When</th><th></th></tr></thead><tbody>
           ${out.tasks.map((t) => `<tr>
+            <td>${siteBadge(t.site)}</td>
             <td>${esc(TYPE_LABELS[t.type])}</td><td>${esc(t.period)}</td>
             <td>${esc(t.submittedBy)}</td><td>${esc((t.submittedAt || '').slice(0, 16).replace('T', ' '))}</td>
-            <td><button class="btn primary boOpenTask" data-type="${esc(t.type)}" data-period="${esc(t.period)}">Review</button></td>
+            <td><button class="btn primary boOpenTask" data-site="${esc(t.site)}" data-type="${esc(t.type)}" data-period="${esc(t.period)}">Review</button></td>
           </tr>`).join('')}</tbody></table>`
-        : '<span class="ok">Nothing waiting for approval.</span>';
+        : '<span class="ok">Nothing waiting for approval at either parlor.</span>';
       $('#boTasksBody').querySelectorAll('.boOpenTask').forEach((b) =>
-        b.addEventListener('click', () => {
+        b.addEventListener('click', async () => {
+          state.site = b.dataset.site;                 // review in that parlor's context
+          if ($('#boSite')) $('#boSite').value = state.site;
+          // the document header must show THAT parlor's address block
+          try { state.branchCfg = (await TB.api('/api/branch-config?' + siteQ())).config || {}; } catch (_) {}
           $('#rType').value = b.dataset.type;
           $('#rPeriod').value = b.dataset.period;
           loadReport(false);
+          loadSessions();
           $('#rDoc').scrollIntoView({ behavior: 'smooth' });
         }));
     } catch (e) {
@@ -890,6 +948,78 @@
         note(`${fullName} added ✓ — ready to assign in the session editor.`);
       } catch (e) { fail(e); }
     }));
+  }
+
+
+  // Prices admin (manager): the ORG-SHARED price list on the server — the
+  // single source of truth both parlors charge from. Saving appends a new
+  // dated set; older waivers keep their dated prices.
+  async function renderPricesAdmin() {
+    const host = $('#pricesBody');
+    try {
+      const out = await TB.api('/api/prices');
+      state.prices = out.sets || [];
+      let seededFromDevice = false;
+      let cur = state.prices.slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).at(-1);
+      if (!cur) {
+        // Server has no prices yet (fresh migration): prefill from this
+        // device's cached price list so the manager can seed the server
+        // with two clicks instead of retyping everything.
+        try {
+          const cached = JSON.parse(localStorage.getItem('tb_price_sets_v1') || '[]');
+          cur = cached.slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).at(-1);
+          if (cur) seededFromDevice = true;
+        } catch (_) {}
+      }
+      if (!cur) cur = { effectiveFrom: '(none yet)', services: {}, addons: {} };
+      const SERVICES = ['1hr Thai Back Massage', '1hr Thai Body Massage', '1hr Thai Foot Massage', '1hr Thai Swedish Massage',
+        '1hr Swedish Massage', '1hr Thai Aromatherapy Massage', 'Combo 1', 'Combo 2', 'Combo 3', 'Combo 4', 'Combo 5', 'Combo 6', 'Combo 7', 'Combo 8'];
+      const ADD_ONS = ['Unscented Oil', 'Scented Oil', 'Herbal Hotpads', 'Ventosa', 'Hot Stone', 'Half Hour', '1 hr extra massage'];
+      const row = (g, n) => `<tr><td>${esc(n)}</td><td>${g === 's' ? 'Service' : 'Add-On'}</td>
+        <td><input class="prIn" data-g="${g}" data-n="${esc(n)}" type="number" step="1" min="0"
+          value="${(g === 's' ? cur.services[n] : cur.addons[n]) ?? 0}" style="width:100px" disabled /></td></tr>`;
+      host.innerHTML = `
+        <div class="muted">${seededFromDevice
+          ? '<b>The server has no prices yet.</b> The table below is prefilled from THIS device\'s price list — press "Edit prices" then "Save" to make it the shared list for both parlors.'
+          : `Current prices (effective from ${esc(cur.effectiveFrom)}). Changes apply to BOTH parlors and reach the iPads automatically.`}</div>
+        <div class="tableWrap" style="max-height:280px;overflow:auto;margin-top:8px;"><table>
+          <thead><tr><th>Item</th><th>Type</th><th>Price</th></tr></thead>
+          <tbody>${SERVICES.map((n) => row('s', n)).join('')}${ADD_ONS.map((n) => row('a', n)).join('')}</tbody>
+        </table></div>
+        <div class="row" style="margin-top:8px;">
+          <button id="prEdit" class="btn">Edit prices</button>
+          <button id="prSave" class="btn primary" disabled>Save — applies from today</button>
+          <span id="prMsg" role="status"></span>
+        </div>`;
+      $('#prEdit').addEventListener('click', () => {
+        if (!confirm('Unlock prices for editing? New prices apply to both parlors starting today.')) return;
+        host.querySelectorAll('.prIn').forEach((i) => { i.disabled = false; });
+        $('#prSave').disabled = false;
+        $('#prEdit').disabled = true;
+      });
+      $('#prSave').addEventListener('click', () => busy($('#prSave'), 'Saving…', async () => {
+        const services = {}, addons = {};
+        let bad = false;
+        host.querySelectorAll('.prIn').forEach((i) => {
+          const v = Number(i.value);
+          if (!Number.isFinite(v) || v < 0) bad = true;
+          (i.dataset.g === 's' ? services : addons)[i.dataset.n] = v;
+        });
+        const m = $('#prMsg');
+        if (bad) { m.className = 'err'; m.textContent = 'Prices must be 0 or more.'; return; }
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const sets = [...state.prices.filter((x) => x.effectiveFrom !== today), { effectiveFrom: today, services, addons }];
+        try {
+          await TB.api('/api/prices', { method: 'PUT', body: { sets } });
+          await TB.refreshPrices(); // update this device's cache too
+          m.className = 'ok'; m.textContent = 'Saved ✓ — both parlors now charge these prices.';
+          setTimeout(() => renderPricesAdmin(), 1500);
+        } catch (e) { m.className = 'err'; m.textContent = e.message; }
+      }));
+    } catch (e) {
+      host.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    }
   }
 
   async function loadDrive() {

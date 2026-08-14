@@ -900,6 +900,7 @@ async function submit() {
 
     const record = {
       id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2))),
+      siteId: (window.TB && TB.deviceSite()) || 'panacan', // which parlor captured this
       createdAt: Date.now(),
       updatedAt: Date.now(),
       synced: false, // pushed to the server by sync.js when online

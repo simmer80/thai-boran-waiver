@@ -122,5 +122,54 @@
     }
   }
 
-  window.TB = { CFG, injectNav, updateNetChip, api, login, logout, me, cachedUser, setCachedUser, showWaking };
+  // ------------------------------------------------------------ device site
+  // Which parlor this device belongs to. Set by the manager in the Manager
+  // tab's device section. The laptop typically has none (manager picks per
+  // view); iPads are set once to their own parlor.
+  const SITES = [
+    { id: 'panacan', label: 'Panacan' },
+    { id: 'airport-road', label: 'Airport Road' },
+  ];
+  function deviceSite() {
+    const s = localStorage.getItem('tb_site') || '';
+    return SITES.some((x) => x.id === s) ? s : '';
+  }
+  function setDeviceSite(id) {
+    if (id) localStorage.setItem('tb_site', id);
+    else localStorage.removeItem('tb_site');
+  }
+  function siteLabel(id) {
+    const s = SITES.find((x) => x.id === id);
+    return s ? s.label : (id || 'no site selected');
+  }
+
+  // ------------------------------------------------------- shared prices
+  // Prices are ORG-SHARED and live on the server (single source of truth
+  // for both parlors). Every page refreshes the local cache
+  // (tb_price_sets_v1 — the same key the waiver form charges from) on load;
+  // offline the last-known cached prices keep the till working.
+  async function refreshPrices() {
+    if (!navigator.onLine) return { offline: true };
+    try {
+      const res = await fetch((CFG.apiBase || '') + '/api/prices', { cache: 'no-store' });
+      if (!res.ok) throw new Error('prices fetch failed');
+      const out = await res.json();
+      if (!Array.isArray(out.sets)) return { ok: false };
+      const before = localStorage.getItem('tb_price_sets_v1') || '';
+      const after = JSON.stringify(out.sets);
+      const changed = before !== after && out.sets.length > 0;
+      if (out.sets.length > 0) localStorage.setItem('tb_price_sets_v1', after);
+      document.dispatchEvent(new CustomEvent('tb:prices', {
+        detail: { changed, updatedAt: out.updatedAt, count: out.sets.length },
+      }));
+      return { ok: true, changed };
+    } catch (_) {
+      return { ok: false }; // cache stays; charging keeps working offline
+    }
+  }
+
+  window.TB = {
+    CFG, injectNav, updateNetChip, api, login, logout, me, cachedUser, setCachedUser, showWaking,
+    SITES, deviceSite, setDeviceSite, siteLabel, refreshPrices,
+  };
 })();

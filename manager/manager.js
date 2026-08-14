@@ -445,6 +445,10 @@ function collectDistinctItemsFromRows(rows) {
 }
 
 function renderPriceEditor() {
+  // Legacy local editor removed from the page: prices are org-shared and
+  // edited server-side (backoffice Prices panel). The local cache still
+  // feeds the sales view; nothing to render here any more.
+  if (!el("priceStatus")) return;
   const sets = ensureInitialPriceSet();
   const currentSet = sets.slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).at(-1);
 
@@ -1068,16 +1072,31 @@ function init() {
   // Price control
   if (localStorage.getItem(PRICE_LOCKED_KEY) === null) setPricesLocked(true);
 
-  el("btnPricesEdit").addEventListener("click", () => {
+  // Legacy local price-editor buttons no longer exist (prices are edited in
+  // the server section, shared by both parlors) — guards keep old markup safe.
+  if (el("btnPricesEdit")) el("btnPricesEdit").addEventListener("click", () => {
     if (!confirm("Unlock prices for editing?")) return;
     setPricesLocked(false);
     renderPriceEditor();
   });
 
-  el("btnPricesSaveLock").addEventListener("click", () => {
+  if (el("btnPricesSaveLock")) el("btnPricesSaveLock").addEventListener("click", () => {
     if (!confirm("Save prices and lock? New prices apply starting today.")) return;
     saveAndLockPrices();
   });
+
+  // Device parlor setting (inside the manager-gated device section)
+  if (el("deviceSite") && window.TB) {
+    el("deviceSite").value = TB.deviceSite();
+    el("deviceSite").addEventListener("change", () => {
+      TB.setDeviceSite(el("deviceSite").value);
+      const m = el("deviceSiteMsg");
+      m.textContent = el("deviceSite").value
+        ? "Saved — new waivers from this device are stamped " + TB.siteLabel(el("deviceSite").value) + "."
+        : "Cleared — records default to Panacan.";
+      m.style.color = "#0a7a2a";
+    });
+  }
 
   el("btnClearAll").addEventListener("click", async () => {
   if (!confirm("Clear all saved submissions on this iPad?")) return;
