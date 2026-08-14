@@ -18,11 +18,18 @@
          form, quick record fixes). Moved here from the Waiver Form tab. -->
     <div class="panel noprint">
       <h2 style="margin-top:0">This device (works offline)</h2>
-      <div id="localLocked" class="row">
-        <div><label for="rcPin">Receptionist PIN</label>
-          <input id="rcPin" type="password" inputmode="numeric" autocomplete="off" style="width:120px" /></div>
-        <button id="rcUnlock" class="btn primary">Unlock</button>
-        <span id="rcPinMsg" class="err" role="alert"></span>
+      <div id="localLocked">
+        <div class="muted" style="margin-bottom:8px;">
+          This section unlocks automatically when you sign in below. The device
+          PIN is only an <b>offline fallback</b> — for when there is no WiFi and
+          the server cannot verify who you are.
+        </div>
+        <div class="row">
+          <div><label for="rcPin">Device PIN (offline fallback)</label>
+            <input id="rcPin" type="password" inputmode="numeric" autocomplete="off" style="width:120px" /></div>
+          <button id="rcUnlock" class="btn">Unlock with PIN</button>
+          <span id="rcPinMsg" class="err" role="alert"></span>
+        </div>
       </div>
       <div id="localBody" class="hidden">
         <div class="row" style="margin-top:6px;">

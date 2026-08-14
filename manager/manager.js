@@ -979,29 +979,51 @@ function forceLock() {
   }
 }
 
+function unlockLocal() {
+  hideBlock("pinCard");
+  showBlock("mgrCard");
+  loadRows();
+}
+
 function unlockIfPinOk(pin) {
   if (pin === MANAGER_PIN) {
-    hideBlock("pinCard");
-    showBlock("mgrCard");
-    loadRows();
+    unlockLocal();
     return true;
   }
   return false;
 }
 
+// Set once a MANAGER's server login has been verified on this page load.
+// The local section then unlocks (and re-unlocks after a walk-away lock)
+// without the PIN; the PIN remains only as the offline fallback.
+let serverAuthed = false;
+
 function init() {
   setupOfflineHint();
-  // Auto-lock whenever the manager page is left or restored (iPad swipe/back cache safe)
+
+  // Primary unlock: a server-verified manager login from the back office.
+  document.addEventListener("tb:authed", (e) => {
+    const role = e.detail && e.detail.role;
+    if (role === "manager" || role === "admin") {
+      serverAuthed = true;
+      unlockLocal();
+    }
+  });
+
+  // Auto-lock whenever the manager page is left or hidden (walk-away
+  // privacy: the local section holds client photos and medical data).
   window.addEventListener("pagehide", () => {
     forceLock();
   });
 
   window.addEventListener("pageshow", () => {
     forceLock();
+    if (serverAuthed) unlockLocal(); // still the same verified manager session
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") forceLock();
+    else if (serverAuthed) unlockLocal();
   });
 
       // Always start locked

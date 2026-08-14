@@ -229,6 +229,11 @@
     $('#rLoad').addEventListener('click', () => loadReport(false));
     loadSessions();
     if (mgr) { loadTasks(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
+
+    // Tell the page a server-verified user is present: the local device
+    // sections (reception settings / manager device history) unlock off this
+    // instead of asking for their legacy PINs.
+    document.dispatchEvent(new CustomEvent('tb:authed', { detail: { ...state.user } }));
   }
 
   // Manager: reset a receptionist's password (forgot-password flow — the
@@ -767,19 +772,125 @@
     }
   }
 
+  // ----------------------------------------------------- connecting state
+  // Free Render servers sleep after ~15 min idle and take 30-60s to wake.
+  // From the moment this tab starts contacting the server until /api/health
+  // answers, show an animated connecting screen (progress bar + elapsed
+  // seconds + rotating status text). Nothing else renders, so the login
+  // form and all data entry are blocked until the server is really there.
+  // The Waiver Form tab never runs this — capture never waits on the server.
+  const CONNECT_BUDGET_MS = 90 * 1000;
+  const CONNECT_MESSAGES = [
+    'Contacting the server…',
+    'Waking up the server… usually 30–60 seconds (free hosting sleeps when idle).',
+    'Still waking up — nearly there…',
+    'Almost ready — thanks for waiting.',
+  ];
+
+  async function healthOnce(timeoutMs) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetch((TB.CFG.apiBase || '') + '/api/health', { signal: ctl.signal, cache: 'no-store' });
+      return res.ok;
+    } catch (_) {
+      return false;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  function renderConnecting() {
+    state.mount.innerHTML = `
+      <div class="tb-connect" role="status" aria-live="polite">
+        <h2>Connecting to the server</h2>
+        <div class="tb-progress" aria-hidden="true"></div>
+        <div class="status" id="tbConnMsg">${CONNECT_MESSAGES[0]}</div>
+        <div class="secs"><span id="tbConnSecs">0</span> seconds elapsed</div>
+        <div class="muted" style="margin-top:14px;font-size:12px;color:#888;">
+          The Waiver Form tab keeps working while this connects.
+        </div>
+      </div>`;
+  }
+
+  function renderConnectFailed() {
+    state.mount.innerHTML = `
+      <div class="tb-connect">
+        <h2>Could not reach the server</h2>
+        <div class="status">
+          No answer after 90 seconds. Either the WiFi is down, or the server is
+          having trouble starting. The <b>Waiver Form</b> tab keeps working
+          offline — captured waivers sync automatically once the connection
+          returns.
+        </div>
+        <div class="row" style="justify-content:center;margin-top:14px;">
+          <button id="tbConnRetry" class="btn primary">Try again</button>
+        </div>
+      </div>`;
+    $('#tbConnRetry').addEventListener('click', () => startup());
+  }
+
+  // Poll /api/health with backoff until it answers or the budget runs out.
+  async function connectToServer() {
+    renderConnecting();
+    const started = Date.now();
+    let msgIdx = 0;
+    const secsTimer = setInterval(() => {
+      const el = $('#tbConnSecs');
+      if (el) el.textContent = Math.floor((Date.now() - started) / 1000);
+    }, 500);
+    const msgTimer = setInterval(() => {
+      const el = $('#tbConnMsg');
+      msgIdx = Math.min(msgIdx + 1, CONNECT_MESSAGES.length - 1);
+      if (el) el.textContent = CONNECT_MESSAGES[msgIdx];
+    }, 8000);
+
+    try {
+      let delay = 1000;
+      while (Date.now() - started < CONNECT_BUDGET_MS) {
+        // Long per-attempt timeout: the request that triggers the wake can
+        // itself hang until the server is up.
+        const remaining = CONNECT_BUDGET_MS - (Date.now() - started);
+        if (await healthOnce(Math.min(15000, remaining))) return true;
+        if (CONNECT_BUDGET_MS - (Date.now() - started) <= 0) break;
+        await new Promise((r) => setTimeout(r, delay));
+        delay = Math.min(delay * 1.5, 5000); // gentle backoff
+      }
+      return false;
+    } finally {
+      clearInterval(secsTimer);
+      clearInterval(msgTimer);
+    }
+  }
+
+  // Full entry sequence: connect -> restore session -> render. Runs on page
+  // load, on Retry, and when the connection comes back.
+  let startingUp = false;
+  async function startup() {
+    if (startingUp) return;
+    startingUp = true;
+    try {
+      if (!navigator.onLine) { render(); return; }
+      const ok = await connectToServer();
+      if (!ok) { renderConnectFailed(); return; }
+      state.user = await TB.me();
+      if (state.user && !state.user.mustChangePassword) {
+        try { await loadBasics(); } catch (_) {}
+      }
+      render(); // straight into login form or dashboard — no extra click
+    } finally {
+      startingUp = false;
+    }
+  }
+
   // ------------------------------------------------------------------ init
   async function init({ managerMode, mount, logoSrc }) {
     state.managerMode = !!managerMode;
     state.mount = mount;
     if (logoSrc) state.logoSrc = logoSrc;
-    window.addEventListener('online', () => { render(); if (state.user) loadBasics().then(render); });
+    window.addEventListener('online', () => startup());
     window.addEventListener('offline', render);
-
-    if (navigator.onLine) {
-      state.user = await TB.me();
-      if (state.user) { try { await loadBasics(); } catch (_) {} }
-    }
-    render();
+    await startup();
   }
 
   window.TBBackoffice = { init };

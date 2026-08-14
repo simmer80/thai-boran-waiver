@@ -163,18 +163,27 @@
   }
 
   // ------------------------------------------------------------------ init
+  function unlockLocal() {
+    $('rcPin').value = '';
+    $('rcPinMsg').textContent = '';
+    $('localLocked').classList.add('hidden');
+    $('localBody').classList.remove('hidden');
+    refreshButtons();
+  }
+
   function init() {
+    // Primary unlock: a server-verified login (any role) — no PIN needed.
+    document.addEventListener('tb:authed', unlockLocal);
+
+    // Offline fallback only: the device PIN, for when the server cannot
+    // verify the login (no WiFi).
     $('rcUnlock').addEventListener('click', () => {
       if ($('rcPin').value.trim() !== RECEPTION_PIN) {
         $('rcPinMsg').textContent = 'Wrong PIN.';
         $('rcPin').value = '';
         return;
       }
-      $('rcPin').value = '';
-      $('rcPinMsg').textContent = '';
-      $('localLocked').classList.add('hidden');
-      $('localBody').classList.remove('hidden');
-      refreshButtons();
+      unlockLocal();
     });
     $('rcPin').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('rcUnlock').click(); });
     $('rcLock').addEventListener('click', () => {
