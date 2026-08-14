@@ -321,8 +321,11 @@
     const r = state.sessions.find((x) => x.id === id);
     if (!r) return;
     state.editingId = id;
-    const opts = state.therapists.map((t) =>
-      `<option value="${esc(t.id)}" ${t.id === r.therapistId ? 'selected' : ''}>${esc(t.fullName)}</option>`).join('');
+    // Pickers hide inactive therapists, but keep the record's current
+    // assignment selectable (labelled) so old records stay editable.
+    const pickable = state.therapists.filter((t) => t.active !== false || t.id === r.therapistId);
+    const opts = pickable.map((t) =>
+      `<option value="${esc(t.id)}" ${t.id === r.therapistId ? 'selected' : ''}>${esc(t.fullName)}${t.active === false ? ' (inactive)' : ''}</option>`).join('');
     $('#sessEdit').innerHTML = `<div class="panel" style="background:#f8fafc;margin-top:10px;">
       <b>Edit: ${esc(r.customer)} — ${esc(r.date)} ${esc(r.timestart)}</b>
       <div class="row" style="margin-top:8px;">
@@ -620,49 +623,129 @@
     }
   }
 
+  const REST_DAYS = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
   function renderTherapists() {
     const host = $('#thBody');
-    const days = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    host.innerHTML = `<div class="tableWrap"><table>
-      <thead><tr><th>ID</th><th>Full name</th><th>Active</th><th>Rest day</th><th>Commission rate</th><th></th></tr></thead>
-      <tbody>${state.therapists.map((t) => `<tr>
-        <td>${esc(t.id)}</td>
-        <td><input class="tN" data-id="${esc(t.id)}" value="${esc(t.fullName)}" /></td>
-        <td><input type="checkbox" class="tA" data-id="${esc(t.id)}" ${t.active !== false ? 'checked' : ''} /></td>
-        <td><select class="tR" data-id="${esc(t.id)}">${days.map((d) => `<option ${d === (t.restDay || '') ? 'selected' : ''}>${d}</option>`).join('')}</select></td>
-        <td><input class="tC" type="number" step="0.01" min="0" max="1" data-id="${esc(t.id)}" value="${t.commissionRate || 0}" style="width:80px" /></td>
-        <td><button class="btn tSave" data-id="${esc(t.id)}">Save</button></td>
-      </tr>`).join('')}</tbody></table></div>
-      <div class="row" style="margin-top:8px;">
+    const active = state.therapists.filter((t) => t.active !== false);
+    const inactive = state.therapists.filter((t) => t.active === false);
+
+    const row = (t) => `<tr>
+      <td>${esc(t.id)}</td><td>${esc(t.fullName)}</td>
+      <td>${esc(t.restDay || '—')}</td><td>${(t.commissionRate ?? 0)}</td>
+      <td class="row" style="gap:6px;">
+        <button class="btn tEdit" data-id="${esc(t.id)}">Edit</button>
+        ${t.active === false
+          ? `<button class="btn tReact" data-id="${esc(t.id)}">Reactivate</button>`
+          : ''}
+        <button class="btn danger tRemove" data-id="${esc(t.id)}" data-name="${esc(t.fullName)}">Remove</button>
+      </td></tr>`;
+
+    host.innerHTML = `
+      <div class="tableWrap"><table>
+        <thead><tr><th>ID</th><th>Full name</th><th>Rest day</th><th>Rate</th><th></th></tr></thead>
+        <tbody>${active.map(row).join('') || '<tr><td colspan="5" class="muted">No active therapists.</td></tr>'}</tbody>
+      </table></div>
+      ${inactive.length ? `
+      <details style="margin-top:10px;"><summary class="btn" style="display:inline-block">Inactive (${inactive.length})</summary>
+        <div class="tableWrap" style="margin-top:8px;"><table>
+          <thead><tr><th>ID</th><th>Full name</th><th>Rest day</th><th>Rate</th><th></th></tr></thead>
+          <tbody>${inactive.map(row).join('')}</tbody>
+        </table></div>
+        <div class="muted" style="margin-top:6px;">Inactive therapists are hidden from new reports and pickers; their rows in historical documents are unchanged.</div>
+      </details>` : ''}
+      <div class="row" style="margin-top:10px;">
         <div><label>New id</label><input id="tNewId" style="width:100px" placeholder="t-ana" /></div>
         <div><label>Full name</label><input id="tNewName" /></div>
-        <button id="tAdd" class="btn primary">Add therapist</button><span id="tMsg"></span>
-      </div>`;
-    host.querySelectorAll('.tSave').forEach((b) => b.addEventListener('click', async () => {
-      const id = b.dataset.id;
-      try {
-        const out = await TB.api('/api/therapists/' + encodeURIComponent(id), {
-          method: 'PATCH',
-          body: {
-            fullName: host.querySelector(`.tN[data-id="${id}"]`).value,
-            active: host.querySelector(`.tA[data-id="${id}"]`).checked,
-            restDay: host.querySelector(`.tR[data-id="${id}"]`).value,
-            commissionRate: Number(host.querySelector(`.tC[data-id="${id}"]`).value) || 0,
-          },
-        });
-        state.therapists = out.therapists;
-        renderTherapists();
-      } catch (e) { $('#tMsg').className = 'err'; $('#tMsg').textContent = e.message; }
+        <button id="tAdd" class="btn primary">Add therapist</button><span id="tMsg" role="alert"></span>
+      </div>
+      <div id="tEditor"></div>`;
+
+    const refresh = (out) => { state.therapists = out.therapists; renderTherapists(); };
+    const fail = (e) => { $('#tMsg').className = 'err'; $('#tMsg').textContent = e.message; };
+
+    // ---- full editor for every field
+    host.querySelectorAll('.tEdit').forEach((b) => b.addEventListener('click', () => {
+      const t = state.therapists.find((x) => x.id === b.dataset.id);
+      if (!t) return;
+      $('#tEditor').innerHTML = `<div class="panel" style="background:#f8fafc;margin-top:10px;">
+        <b>Edit therapist — ${esc(t.id)}</b>
+        <div class="row" style="margin-top:8px;">
+          <div><label for="teName">Full name</label><input id="teName" value="${esc(t.fullName)}" /></div>
+          <div><label for="teRest">Fixed rest day</label><select id="teRest">
+            ${REST_DAYS.map((d) => `<option value="${d}" ${d === (t.restDay || '') ? 'selected' : ''}>${d || '(none)'}</option>`).join('')}
+          </select></div>
+          <div><label for="teRate">Commission rate (0–1, e.g. 0.4 = 40%)</label>
+            <input id="teRate" type="number" step="0.01" min="0" max="1" value="${t.commissionRate ?? 0}" style="width:100px" /></div>
+          <div><label for="teActive">Active</label><input id="teActive" type="checkbox" ${t.active !== false ? 'checked' : ''} /></div>
+          <button id="teSave" class="btn primary">Save</button>
+          <button id="teCancel" class="btn">Cancel</button>
+          <span id="teMsg" class="err" role="alert"></span>
+        </div></div>`;
+      $('#teCancel').addEventListener('click', () => { $('#tEditor').innerHTML = ''; });
+      $('#teSave').addEventListener('click', async () => {
+        const msg = $('#teMsg'); msg.textContent = '';
+        const fullName = $('#teName').value.trim();
+        const rate = Number($('#teRate').value);
+        if (!fullName) { msg.textContent = 'Full name cannot be empty.'; return; }
+        if (!Number.isFinite(rate) || rate < 0 || rate > 1) { msg.textContent = 'Commission rate must be between 0 and 1 (e.g. 0.4).'; return; }
+        try {
+          refresh(await TB.api('/api/therapists/' + encodeURIComponent(t.id), {
+            method: 'PATCH',
+            body: { fullName, restDay: $('#teRest').value, commissionRate: rate, active: $('#teActive').checked },
+          }));
+        } catch (e) { msg.textContent = e.message; }
+      });
     }));
+
+    // ---- reactivate
+    host.querySelectorAll('.tReact').forEach((b) => b.addEventListener('click', async () => {
+      try {
+        refresh(await TB.api('/api/therapists/' + encodeURIComponent(b.dataset.id), {
+          method: 'PATCH', body: { active: true },
+        }));
+      } catch (e) { fail(e); }
+    }));
+
+    // ---- remove: deactivate when referenced, hard-delete only when clean
+    host.querySelectorAll('.tRemove').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.id, name = b.dataset.name;
+      b.disabled = true;
+      try {
+        const info = await TB.api('/api/therapists/' + encodeURIComponent(id) + '/references');
+        if (info.referenced) {
+          const n = info.references;
+          const ok = confirm(
+            `${name} appears in ${n.sessions} session record(s) and ${n.reports} report row(s), ` +
+            `so the record cannot be deleted outright.\n\n` +
+            `OK will DEACTIVATE her instead: she disappears from new reports and from pickers, ` +
+            `but every historical document keeps her rows exactly as they are.`
+          );
+          if (ok) {
+            refresh(await TB.api('/api/therapists/' + encodeURIComponent(id), {
+              method: 'PATCH', body: { active: false },
+            }));
+          }
+        } else {
+          const typed = prompt(
+            `${name} has no session records or report rows anywhere, so she can be permanently deleted.\n\n` +
+            `Type the full name exactly (${name}) to confirm the permanent delete:`
+          );
+          if (typed === null) return;
+          if (typed.trim() !== name) { fail(new Error('Name did not match — nothing was deleted.')); return; }
+          refresh(await TB.api('/api/therapists/' + encodeURIComponent(id), { method: 'DELETE' }));
+        }
+      } catch (e) { fail(e); }
+      finally { b.disabled = false; }
+    }));
+
     $('#tAdd').addEventListener('click', async () => {
       try {
-        const out = await TB.api('/api/therapists', {
+        refresh(await TB.api('/api/therapists', {
           method: 'POST',
           body: { id: $('#tNewId').value.trim(), fullName: $('#tNewName').value.trim() },
-        });
-        state.therapists = out.therapists;
-        renderTherapists();
-      } catch (e) { $('#tMsg').className = 'err'; $('#tMsg').textContent = e.message; }
+        }));
+      } catch (e) { fail(e); }
     });
   }
 
