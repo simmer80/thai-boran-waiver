@@ -676,6 +676,7 @@
       $('#tEditor').innerHTML = `<div class="panel" style="background:#f8fafc;margin-top:10px;">
         <b>Edit therapist — ${esc(t.id)}</b>
         <div class="row" style="margin-top:8px;">
+          <div><label for="teId">ID</label><input id="teId" value="${esc(t.id)}" style="width:130px" /></div>
           <div><label for="teName">Full name</label><input id="teName" value="${esc(t.fullName)}" /></div>
           <div><label for="teRest">Fixed rest day</label><select id="teRest">
             ${REST_DAYS.map((d) => `<option value="${d}" ${d === (t.restDay || '') ? 'selected' : ''}>${d || '(none)'}</option>`).join('')}
@@ -686,20 +687,63 @@
           <button id="teSave" class="btn primary">Save</button>
           <button id="teCancel" class="btn">Cancel</button>
           <span id="teMsg" class="err" role="alert"></span>
-        </div></div>`;
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          Changing the <b>ID</b> renames it across all historical session records,
+          draft/submitted reports and manual values. Approved documents are
+          historical and keep the old ID. It can touch many files and take a
+          little while.
+        </div>
+        <div id="teProgress"></div></div>`;
       $('#teCancel').addEventListener('click', () => { $('#tEditor').innerHTML = ''; });
       $('#teSave').addEventListener('click', async () => {
         const msg = $('#teMsg'); msg.textContent = '';
+        const newIdRaw = $('#teId').value.trim();
         const fullName = $('#teName').value.trim();
         const rate = Number($('#teRate').value);
         if (!fullName) { msg.textContent = 'Full name cannot be empty.'; return; }
         if (!Number.isFinite(rate) || rate < 0 || rate > 1) { msg.textContent = 'Commission rate must be between 0 and 1 (e.g. 0.4).'; return; }
+        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(newIdRaw)) {
+          msg.textContent = 'ID must be 1–32 characters: letters, digits, hyphen, underscore.'; return;
+        }
+
+        let currentId = t.id;
         try {
-          refresh(await TB.api('/api/therapists/' + encodeURIComponent(t.id), {
+          // 1. ID rename first (if changed), with warning + progress + summary
+          if (newIdRaw !== t.id) {
+            const sure = confirm(
+              `Rename therapist ID "${t.id}" to "${newIdRaw}"?\n\n` +
+              `This updates ALL historical session records, draft and submitted ` +
+              `reports and manual values that reference the old ID. Approved ` +
+              `documents are historical and keep the old ID. If it is interrupted, ` +
+              `running the same rename again finishes it safely.`
+            );
+            if (!sure) return;
+            $('#teSave').disabled = true;
+            $('#teProgress').innerHTML = `<div style="margin-top:10px;">
+              <div class="tb-progress"></div>
+              <div class="muted">Renaming across records… this may take a while on a long history. Do not close the page.</div></div>`;
+            const out = await TB.api('/api/therapists/' + encodeURIComponent(t.id) + '/rename', {
+              method: 'POST', body: { newId: newIdRaw },
+            });
+            currentId = newIdRaw;
+            $('#teProgress').innerHTML = `<div class="ok" style="margin-top:10px;">
+              Rename complete — ${out.filesTouched} file(s) updated${out.resumed ? ' (resumed an interrupted rename)' : ''}.</div>`;
+          }
+
+          // 2. remaining field changes against the (possibly new) id
+          const out2 = await TB.api('/api/therapists/' + encodeURIComponent(currentId), {
             method: 'PATCH',
             body: { fullName, restDay: $('#teRest').value, commissionRate: rate, active: $('#teActive').checked },
-          }));
-        } catch (e) { msg.textContent = e.message; }
+          });
+          state.therapists = out2.therapists;
+          renderTherapists();
+          if (currentId !== t.id) loadSessions(); // ids in the sessions table changed
+        } catch (e) {
+          $('#teSave').disabled = false;
+          $('#teProgress').innerHTML = '';
+          msg.textContent = e.message;
+        }
       });
     }));
 
