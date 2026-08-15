@@ -899,9 +899,19 @@ async function submit() {
     const seniorId = senior ? (el('seniorId') ? el('seniorId').value.trim() : '') : '';
     const pricing = computePricing(date, services, addons, senior);
 
+    // Who is keying this waiver. The waiver page has no login of its own, so
+    // the truth available at CAPTURE time is the receptionist last signed in
+    // on this device — the person on shift. Stamping it here (rather than
+    // when the record eventually syncs) keeps the attribution tied to the
+    // shift that took the waiver, and it is what fills "Raw data input by"
+    // on the documents. sync.js and the server re-stamp only if it is blank.
+    const onShift = (window.TB && TB.cachedUser()) || null;
+
     const record = {
       id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2))),
       siteId: (window.TB && TB.deviceSite()) || 'panacan', // which parlor captured this
+      receptionistId: onShift ? onShift.uid : '',
+      receptionistName: onShift ? onShift.name : '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
       synced: false, // pushed to the server by sync.js when online

@@ -1111,7 +1111,13 @@ function init() {
 
   el("btnCloseDetail").addEventListener("click", () => showModal("detailModal", false));
 el("btnPrintDetail").addEventListener("click", () => {
+  // Scope the "hide everything else" print rule to THIS print job, so the
+  // back-office document printing on the same page is unaffected.
+  document.body.classList.add("print-detail");
+  const done = () => document.body.classList.remove("print-detail");
+  window.addEventListener("afterprint", done, { once: true });
   window.print();
+  setTimeout(done, 1000); // Safari does not always fire afterprint
 });
 el("btnBackToList").addEventListener("click", () => showModal("detailModal", false));
 }

@@ -11,11 +11,10 @@
 (function () {
   const $ = (sel, root) => (root || document).querySelector(sel);
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Safe inside an attribute selector (therapist names can carry anything).
+  const cssq = (s) => (window.CSS && CSS.escape ? CSS.escape(String(s ?? '')) : String(s ?? '').replace(/["\\]/g, '\\$&'));
   const money0 = (n) => (Number(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-  const DED_KEYS = ['latesAndAbsences', 'sss', 'phic', 'pagibig', 'ca', 'cb'];
-  const DED_LABELS = { latesAndAbsences: 'Lates/Abs', sss: 'SSS', phic: 'PHIC', pagibig: 'Pag-ibig', ca: 'C.A.', cb: 'C.B.' };
   const TYPE_LABELS = {
     'daily-commission': 'Daily Therapist Commission',
     'weekly-payroll': 'Weekly Therapist Payroll',
@@ -26,6 +25,8 @@
     managerMode: false, mount: null, logoSrc: '../assets/thai_boran_logo.png',
     user: null, therapists: [], users: [], branchCfg: {},
     report: null, reportType: 'daily-commission', reportPeriod: '',
+    editMode: false,     // editing the values IN the document template
+    archive: [], archiveDoc: null, archiveSigUrl: '',
     sessions: [], editingId: null,
     site: '',            // which parlor's data this screen shows
     prices: [],          // org-shared price sets (server copy, manager panel)
@@ -249,8 +250,25 @@
         <div id="rDoc" style="margin-top:12px;">
           <div class="muted">Choose a document and a date above, then press
           “Create / refresh from records”. The document appears here for review,
-          manual values, printing and submission.</div>
+          editing, printing and submission.</div>
         </div>
+      </div>
+      <div class="panel noprint" id="boArchive">
+        <h2 style="margin-top:0">Approved documents
+          <span class="muted" style="font-size:12px;">(the signed copies, straight from this device — no Google Drive needed)</span></h2>
+        <div class="row">
+          ${mgr ? '' : siteBadge(state.site, true)}
+          <div><label for="arType">Document</label><select id="arType">
+            <option value="">All documents</option>
+            ${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
+          </select></div>
+          <div><label for="arFrom">Period from</label><input type="date" id="arFrom" /></div>
+          <div><label for="arTo">Period to</label><input type="date" id="arTo" /></div>
+          <button id="arApply" class="btn primary">Show</button>
+          <span id="arMsg" class="muted" role="status"></span>
+        </div>
+        <div id="arList" style="margin-top:10px;"></div>
+        <div id="arView" style="margin-top:12px;"></div>
       </div>
       ${mgr ? `
       <div class="panel noprint"><h2 style="margin-top:0">Prices <span class="muted" style="font-size:12px;">(shared — both parlors charge the same)</span></h2>
@@ -273,8 +291,16 @@
       });
     }
 
-    $('#rGen').addEventListener('click', () => busy($('#rGen'), 'Working…', () => loadReport(true)));
-    $('#rLoad').addEventListener('click', () => busy($('#rLoad'), 'Opening…', () => loadReport(false)));
+    $('#rGen').addEventListener('click', () => busy($('#rGen'), 'Working…', async () => {
+      if (!confirmDiscard()) return;
+      state.editMode = false;
+      return loadReport(true);
+    }));
+    $('#rLoad').addEventListener('click', () => busy($('#rLoad'), 'Opening…', async () => {
+      if (!confirmDiscard()) return;
+      state.editMode = false;
+      return loadReport(false);
+    }));
     $('#boLogout').addEventListener('click', async () => { await TB.logout(); state.user = null; render(); });
     $('#boChangePw').addEventListener('click', () => {
       const p = $('#boPwPanel');
@@ -290,12 +316,15 @@
       $('#pwCur').focus();
     });
     $('#fApply').addEventListener('click', loadSessions);
+    $('#arApply').addEventListener('click', () => busy($('#arApply'), 'Loading…', loadArchive));
     if (state.site) {
       loadSessions();
+      loadArchive();
     } else {
       $('#fMsg').textContent = '';
       $('#sessRows').innerHTML = '<tr><td colspan="13" class="muted">Choose a parlor above to see its sessions and documents.</td></tr>';
       $('#rMsg').textContent = 'Choose a parlor above first.';
+      $('#arList').innerHTML = '<span class="muted">Choose a parlor above to see its approved documents.</span>';
     }
     if (mgr) { loadTasks(); renderPricesAdmin(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
 
@@ -499,15 +528,27 @@
       ${r.submittedByName ? ` · submitted by ${esc(r.submittedByName)}` : ''}
       ${r.approvedByName ? ` · approved by ${esc(r.approvedByName)} at ${esc(r.approvedAt)}` : ''}`;
 
+    const editable = r.status !== 'approved';
     const acts = [];
+    if (editable) {
+      acts.push(`<button id="aEdit" class="btn ${state.editMode ? '' : 'primary'}">${
+        state.editMode ? 'Stop editing' : '✎ Edit values on the document'}</button>`);
+    }
     acts.push('<button id="aPdf" class="btn">Export PDF</button>');
     acts.push('<button id="aPrint" class="btn">Print</button>');
     if (r.status === 'draft') acts.push('<button id="aSubmit" class="btn primary">Submit for approval</button>');
     if (state.managerMode && r.status === 'submitted') acts.push('<button id="aApprove" class="btn approve">Approve ✓</button>');
     $('#rActions').innerHTML = acts.join('');
 
-    $('#rDoc').innerHTML = TBDoc.render(r.type, r, state.branchCfg, state.logoSrc);
-    renderManualEditor();
+    if (!editable) state.editMode = false;
+    renderDocument();
+
+    if ($('#aEdit')) $('#aEdit').addEventListener('click', () => {
+      if (state.editMode && !confirmDiscard()) return;
+      state.editMode = !state.editMode;
+      renderReport();
+      if (state.editMode) $('#rManual').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
 
     $('#aPdf').addEventListener('click', () => busy($('#aPdf'), 'Preparing PDF…', async () => {
       try {
@@ -535,164 +576,134 @@
         state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/approve?` + siteQ(), { method: 'POST' })).report;
         renderReport();
         loadTasks();
+        loadArchive();  // the signed copy is now in the archive below
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Approved ✓ — signed and archived';
         const mine475 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine475) { m.className = 'muted'; m.textContent = ''; } }, 5000);
       } catch (e) { alert('Approve failed: ' + e.message); }
     }));
   }
 
-  // Manual value editors. Only controls the user actually changes are sent
-  // (dirty tracking), so untouched values keep following the generated data.
-  function renderManualEditor() {
+  // ------------------------------------------------ editing ON the template
+  // The document IS the editor. The same rendered paper the manager reviews
+  // and prints is shown with its manual cells as input boxes sitting in the
+  // column the value belongs to — no abstract "Block 1 / Block 2" list. Cells
+  // the server calculates (gross, deductions total, net pay, row and grand
+  // totals) stay read-only and are recomputed live as the cells are typed in,
+  // so the form always adds up on screen.
+  const EDIT_HINTS = {
+    'daily-commission':
+      'Type hours, stub number and commission straight into the block they belong to. Row totals and the grand total follow along.',
+    'weekly-payroll':
+      'Day cells take an amount; the small button beside one cycles it to RD (rest day) or A (absent). An empty deduction or NH box means it is not applied this week. Gross, total deductions, net pay and the totals row are calculated.',
+    'weekly-sales':
+      'Type a corrected figure over any day. Clearing a box hands that day back to the automatic value from the records. The totals row is calculated.',
+  };
+
+  function docRoot() {
+    return $('#rDoc .doc');
+  }
+
+  function renderDocument() {
     const r = state.report;
+    const host = $('#rDoc');
+    host.innerHTML = TBDoc.render(r.type, r, state.branchCfg, state.logoSrc, { edit: state.editMode });
+    TBFit.attach(host, { refit: true });
+    renderEditBar();
+    if (state.editMode) bindEditing();
+  }
+
+  // Unsaved work must never disappear silently — every route out of edit mode
+  // (cancel, stop editing, regenerate, reload) goes through this.
+  function confirmDiscard() {
+    const root = docRoot();
+    if (!state.editMode || !root || !TBDoc.isDirty(root)) return true;
+    return confirm('This document has changes you have not saved yet.\n\nDiscard them?');
+  }
+
+  function markBarDirty() {
+    const bar = $('#edBar');
+    if (bar) bar.classList.add('dirty');
+    const m = $('#edMsg');
+    if (m) { m.className = 'muted'; m.textContent = 'Unsaved changes'; }
+  }
+
+  function renderEditBar() {
     const host = $('#rManual');
+    const r = state.report;
     if (r.status === 'approved') {
-      host.innerHTML = '<div class="muted">Approved documents are locked. Generate to start a new version if a correction is needed.</div>';
+      host.innerHTML = `<div class="muted">Approved documents are locked — this is the signed copy.
+        Press “Create / refresh from records” to start a new version if a correction is needed.</div>`;
       return;
     }
-    if (r.type === 'weekly-payroll') payrollEditor(host, r);
-    else if (r.type === 'weekly-sales') salesEditor(host, r);
-    else commissionEditor(host, r);
-
-    // Keep the editor's open/closed state across re-renders (saving manual
-    // values regenerates the document; the panel must not snap shut).
-    const details = host.querySelector('details');
-    if (details) {
-      details.open = !!state.manualOpen;
-      details.addEventListener('toggle', () => { state.manualOpen = details.open; });
+    if (!state.editMode) {
+      host.innerHTML = `<div class="muted">Press <b>✎ Edit values on the document</b> to correct values
+        directly in their own boxes on the form below.</div>`;
+      return;
     }
+    host.innerHTML = `<div class="docEditBar" id="edBar">
+      <b>Editing this document</b>
+      <span class="muted" style="flex:1 1 260px;">${esc(EDIT_HINTS[r.type] || '')}</span>
+      <span id="edMsg" role="status"></span>
+      <button id="edCancel" class="btn">Cancel</button>
+      <button id="edSave" class="btn primary">Save changes</button>
+    </div>`;
+    $('#edCancel').addEventListener('click', () => {
+      if (!confirmDiscard()) return;
+      state.editMode = false;
+      renderReport();
+    });
+    $('#edSave').addEventListener('click', () => busy($('#edSave'), 'Saving…', saveEdits));
   }
 
-  function markDirty(e) { e.target.dataset.dirty = '1'; }
-
-  function payrollEditor(host, r) {
-    const rows = r.data.rows.map((row) => {
-      const dayCells = DAY_KEYS.map((k) => {
-        const c = row.days[k];
-        const mode = c.type === 'value' ? (c.auto ? 'auto' : 'auto') : c.type; // RD/A shown, amounts default to auto
-        return `<td>
-          <select data-t="${esc(row.therapistId)}" data-day="${k}" class="pDay">
-            <option value="auto" ${c.type === 'value' || c.auto ? 'selected' : ''}>auto</option>
-            <option value="RD" ${c.type === 'RD' && !c.auto ? 'selected' : ''}>RD</option>
-            <option value="A" ${c.type === 'A' ? 'selected' : ''}>A</option>
-          </select></td>`;
-      }).join('');
-      const dedCells = DED_KEYS.map((k) => `<td>
-        <input type="checkbox" class="pDedOn" data-t="${esc(row.therapistId)}" data-ded="${k}" ${row.deductions[k].enabled ? 'checked' : ''} aria-label="${DED_LABELS[k]} enabled" />
-        <input type="number" step="0.01" min="0" class="pDedAmt" style="width:74px" data-t="${esc(row.therapistId)}" data-ded="${k}" value="${row.deductions[k].amount || ''}" aria-label="${DED_LABELS[k]} amount" />
-      </td>`).join('');
-      return `<tr><td>${esc(row.therapistName)}</td>${dayCells}${dedCells}
-        <td><input type="checkbox" class="pNhOn" data-t="${esc(row.therapistId)}" ${row.nh.enabled ? 'checked' : ''} aria-label="NH enabled" />
-            <input type="number" step="0.01" min="0" class="pNhAmt" style="width:74px" data-t="${esc(row.therapistId)}" value="${row.nh.amount || ''}" aria-label="NH amount" /></td>
-        <td><input type="number" step="0.01" class="pAllow" style="width:80px" data-t="${esc(row.therapistId)}" value="${row.allowance || ''}" aria-label="Allowance" /></td></tr>`;
-    }).join('');
-
-    host.innerHTML = `<details><summary class="btn" style="display:inline-block">Manual values (absences, lates, SSS, PHIC, Pag-ibig, C.A., C.B., NH, allowance)</summary>
-      <div class="tableWrap" style="margin-top:8px;"><table>
-        <thead><tr><th>Therapist</th>${DAY_KEYS.map((k) => `<th>${k}</th>`).join('')}
-        ${DED_KEYS.map((k) => `<th>${DED_LABELS[k]}</th>`).join('')}<th>NH</th><th>Allow.</th></tr></thead>
-        <tbody>${rows}</tbody></table></div>
-      <div class="row" style="margin-top:8px;">
-        <button id="pSave" class="btn primary">Save manual values</button>
-        <span class="muted">Days: auto = commissions from records / RD = rest day / A = absent. Tick a deduction to enable it, amounts persist and survive regeneration.</span>
-        <span id="pMsg"></span>
-      </div></details>`;
-
-    host.querySelectorAll('input,select').forEach((el) => el.addEventListener('change', markDirty));
-    $('#pSave').addEventListener('click', () => busy($('#pSave'), 'Saving…', async () => {
-      const patch = { therapists: {} };
-      const T = (tid) => (patch.therapists[tid] = patch.therapists[tid] || {});
-      host.querySelectorAll('.pDay[data-dirty]').forEach((el) => {
-        const t = T(el.dataset.t); t.days = t.days || {};
-        t.days[el.dataset.day] = el.value === 'auto' ? null : { type: el.value };
+  function bindEditing() {
+    const root = docRoot();
+    if (!root) return;
+    const live = () => {
+      TBDoc.validate(root);
+      TBDoc.recalc(state.report.type, root);
+    };
+    root.querySelectorAll('input.dcell').forEach((el) => {
+      el.addEventListener('input', () => { el.dataset.dirty = '1'; markBarDirty(); live(); });
+    });
+    // The RD / A mark cycles in place; a marked day has no amount.
+    root.querySelectorAll('.markbtn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = { '': 'RD', RD: 'A', A: '' }[btn.dataset.mark || ''];
+        btn.dataset.mark = next;
+        btn.textContent = next || '·';
+        btn.classList.toggle('on', !!next);
+        const amt = root.querySelector(
+          `input[data-e="day"][data-k="${cssq(btn.dataset.k)}"][data-d="${cssq(btn.dataset.d)}"]`
+        );
+        if (amt) {
+          amt.disabled = !!next;
+          if (next) amt.value = '';
+        }
+        btn.dataset.dirty = '1';
+        markBarDirty();
+        live();
       });
-      const dedTouched = new Set();
-      host.querySelectorAll('.pDedOn[data-dirty],.pDedAmt[data-dirty]').forEach((el) =>
-        dedTouched.add(el.dataset.t + '|' + el.dataset.ded));
-      dedTouched.forEach((key) => {
-        const [tid, ded] = key.split('|');
-        const on = host.querySelector(`.pDedOn[data-t="${tid}"][data-ded="${ded}"]`).checked;
-        const amt = Number(host.querySelector(`.pDedAmt[data-t="${tid}"][data-ded="${ded}"]`).value) || 0;
-        const t = T(tid); t.deductions = t.deductions || {};
-        t.deductions[ded] = { enabled: on, amount: amt };
-      });
-      const nhTouched = new Set();
-      host.querySelectorAll('.pNhOn[data-dirty],.pNhAmt[data-dirty]').forEach((el) => nhTouched.add(el.dataset.t));
-      nhTouched.forEach((tid) => {
-        const t = T(tid);
-        t.nh = {
-          enabled: host.querySelector(`.pNhOn[data-t="${tid}"]`).checked,
-          amount: Number(host.querySelector(`.pNhAmt[data-t="${tid}"]`).value) || 0,
-        };
-      });
-      host.querySelectorAll('.pAllow[data-dirty]').forEach((el) => {
-        T(el.dataset.t).allowance = Number(el.value) || 0;
-      });
-      await saveManual(patch, '#pMsg');
-    }));
+    });
   }
 
-  function salesEditor(host, r) {
-    const rows = r.data.rows.map((row) => `<tr><td>${esc(row.date)} ${esc(row.day)}</td>
-      <td><input type="number" step="0.01" class="sIn" data-date="${esc(row.date)}" data-f="grossSales" value="${row.manual ? row.grossSales : ''}" placeholder="${row.grossSales}" /></td>
-      <td><input type="number" step="0.01" class="sIn" data-date="${esc(row.date)}" data-f="commission" value="" placeholder="${row.commission}" /></td>
-      <td><input type="number" step="0.01" class="sIn" data-date="${esc(row.date)}" data-f="bpi" value="" placeholder="${row.bpi}" /></td></tr>`).join('');
-    host.innerHTML = `<details><summary class="btn" style="display:inline-block">Manual corrections</summary>
-      <div class="tableWrap" style="margin-top:8px;"><table>
-      <thead><tr><th>Day</th><th>Gross Sales</th><th>Commission</th><th>BPI</th></tr></thead>
-      <tbody>${rows}</tbody></table></div>
-      <div class="row" style="margin-top:8px;">
-        <div><label>"Raw data input by" (blank = automatic)</label>
-          <input id="sInputBy" value="" placeholder="${esc(r.data.rawDataInputBy || '')}" style="width:260px" /></div>
-        <button id="sSave" class="btn primary">Save manual values</button>
-        <span class="muted">Leave a box empty to keep the automatic value (shown grey). Type a number to override it.</span>
-        <span id="sMsg"></span>
-      </div></details>`;
-    host.querySelectorAll('input').forEach((el) => el.addEventListener('change', markDirty));
-    $('#sSave').addEventListener('click', () => busy($('#sSave'), 'Saving…', async () => {
-      const patch = { days: {} };
-      host.querySelectorAll('.sIn[data-dirty]').forEach((el) => {
-        const d = (patch.days[el.dataset.date] = patch.days[el.dataset.date] || {});
-        d[el.dataset.f] = el.value === '' ? null : Number(el.value);
-      });
-      const by = $('#sInputBy');
-      if (by.dataset.dirty && by.value !== '') patch.rawDataInputBy = by.value;
-      await saveManual(patch, '#sMsg');
-    }));
-  }
-
-  function commissionEditor(host, r) {
-    const rows = r.data.rows.map((row) => {
-      const key = row.therapistId || row.therapistName;
-      const blocks = [];
-      for (let i = 0; i < 6; i++) {
-        const b = row.blocks[i] || { hours: '', stubNumber: '', commission: '' };
-        blocks.push(`<td>
-          <input class="cIn" style="width:44px" data-k="${esc(key)}" data-i="${i}" data-f="hours" value="${esc(b.hours)}" aria-label="hours" />
-          <input class="cIn" style="width:60px" data-k="${esc(key)}" data-i="${i}" data-f="stubNumber" value="${esc(b.stubNumber)}" aria-label="stub" />
-          <input class="cIn" style="width:70px" type="number" step="0.01" data-k="${esc(key)}" data-i="${i}" data-f="commission" value="${esc(b.commission)}" aria-label="commission" />
-        </td>`);
-      }
-      return `<tr><td>${esc(row.therapistName)}</td>${blocks.join('')}</tr>`;
-    }).join('');
-    host.innerHTML = `<details><summary class="btn" style="display:inline-block">Manual corrections (hrs / stub # / commission per block)</summary>
-      <div class="tableWrap" style="margin-top:8px;"><table>
-      <thead><tr><th>Therapist</th>${[1, 2, 3, 4, 5, 6].map((i) => `<th>Block ${i}</th>`).join('')}</tr></thead>
-      <tbody>${rows}</tbody></table></div>
-      <div class="row" style="margin-top:8px;">
-        <button id="cSave" class="btn primary">Save manual values</button><span id="cMsg"></span>
-      </div></details>`;
-    host.querySelectorAll('input').forEach((el) => el.addEventListener('change', markDirty));
-    $('#cSave').addEventListener('click', () => busy($('#cSave'), 'Saving…', async () => {
-      const patch = { rows: {} };
-      host.querySelectorAll('.cIn[data-dirty]').forEach((el) => {
-        const k = el.dataset.k;
-        const rp = (patch.rows[k] = patch.rows[k] || { blocks: {} });
-        const bp = (rp.blocks[el.dataset.i] = rp.blocks[el.dataset.i] || {});
-        bp[el.dataset.f] = el.dataset.f === 'stubNumber' ? el.value : Number(el.value) || 0;
-      });
-      await saveManual(patch, '#cMsg');
-    }));
+  async function saveEdits() {
+    const root = docRoot();
+    const msg = $('#edMsg');
+    const bad = TBDoc.validate(root);
+    if (bad.length) {
+      msg.className = 'err';
+      msg.textContent = bad.length === 1
+        ? 'One cell needs a number of 0 or more.'
+        : `${bad.length} cells need a number of 0 or more.`;
+      bad[0].focus();
+      return;
+    }
+    if (!TBDoc.isDirty(root)) {
+      msg.className = 'muted';
+      msg.textContent = 'Nothing changed yet.';
+      return;
+    }
+    await saveManual(TBDoc.collect(state.report.type, root), '#edMsg');
   }
 
   async function saveManual(patch, msgSel) {
@@ -703,12 +714,152 @@
       state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/manual-values?` + siteQ(), {
         method: 'POST', body: patch,
       })).report;
-      renderReport(); // document + totals recalculate; editor stays open
+      renderReport(); // document re-renders from the server's answer, still in edit mode
       const m = $('#rMsg');
-      m.className = 'ok'; m.textContent = 'Manual values saved ✓ — totals updated';
+      m.className = 'ok'; m.textContent = 'Saved ✓ — the document and its totals are updated';
       const mine645 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine645) { m.className = 'muted'; m.textContent = ''; } }, 4000);
     } catch (e) {
       el.className = 'err'; el.textContent = e.message;
+    }
+  }
+
+  // --------------------------------------------------- approved documents
+  // The in-app archive of signed copies, in BOTH tabs. Everything shown here
+  // is read back from the immutable <period>.approved.v<N>.json snapshot the
+  // server wrote at approval time — never recomputed from live records — so
+  // an archived document always matches the paper that was signed. The PDF
+  // button renders that same snapshot, which is what goes to head office.
+  function pdfName(type, period, version) {
+    return `ThaiBoran-${PDF_SITE[state.site] || state.site}_${PDF_DOC[type]}_${period}_approved_v${version}.pdf`;
+  }
+
+  async function downloadBlob(getBlob, filename) {
+    const blob = await getBlob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  async function loadArchive() {
+    if (!state.site) return;
+    const msg = $('#arMsg');
+    msg.className = 'muted'; msg.textContent = 'Loading…';
+    const q = new URLSearchParams({ site: state.site });
+    if ($('#arType').value) q.set('type', $('#arType').value);
+    if ($('#arFrom').value) q.set('from', $('#arFrom').value);
+    if ($('#arTo').value) q.set('to', $('#arTo').value);
+    try {
+      const out = await TB.api('/api/approved?' + q.toString());
+      state.archive = out.documents;
+      msg.textContent = out.total
+        ? `${out.total} approved document(s)${out.truncated ? ` — showing the ${out.documents.length} most recent` : ''}`
+        : '';
+      $('#arList').innerHTML = out.documents.length
+        ? `<div class="tableWrap"><table>
+            <thead><tr><th>Parlor</th><th>Document</th><th>Period</th><th>Ver.</th>
+              <th>Approved</th><th>Approved by</th><th>Raw data input by</th><th></th></tr></thead>
+            <tbody>${out.documents.map((d) => `<tr>
+              <td>${siteBadge(d.site)}</td>
+              <td>${esc(TYPE_LABELS[d.type] || d.type)}</td>
+              <td>${esc(d.period)}</td>
+              <td>${esc(String(d.version))}</td>
+              <td>${esc((d.approvedAt || '').slice(0, 10))}</td>
+              <td>${esc(d.approvedByName)}${d.hasSignature ? ' <span title="Signed copy">✍</span>' : ''}</td>
+              <td>${esc(d.rawDataInputBy)}</td>
+              <td class="row" style="gap:6px;">
+                <button class="btn primary arOpen" data-t="${esc(d.type)}" data-p="${esc(d.period)}" data-v="${d.version}">Open</button>
+                <button class="btn arPdf" data-t="${esc(d.type)}" data-p="${esc(d.period)}" data-v="${d.version}">PDF</button>
+              </td></tr>`).join('')}</tbody></table></div>`
+        : `<span class="muted">No approved documents${$('#arType').value || $('#arFrom').value || $('#arTo').value
+            ? ' match these filters' : ' for this parlor yet'}. A document appears here as soon as the manager approves it.</span>`;
+
+      $('#arList').querySelectorAll('.arOpen').forEach((b) =>
+        b.addEventListener('click', () => busy(b, 'Opening…', () => openApproved(b.dataset.t, b.dataset.p, b.dataset.v))));
+      $('#arList').querySelectorAll('.arPdf').forEach((b) =>
+        b.addEventListener('click', () => busy(b, '…', async () => {
+          try {
+            await downloadBlob(
+              () => TB.api(`/api/approved/${b.dataset.t}/${b.dataset.p}/${b.dataset.v}/pdf?` + siteQ()),
+              pdfName(b.dataset.t, b.dataset.p, b.dataset.v)
+            );
+          } catch (e) { alert('PDF failed: ' + e.message); }
+        })));
+    } catch (e) {
+      msg.className = 'err';
+      msg.textContent = e.unauthorized ? 'Session expired — sign in again' : e.message;
+      if (e.unauthorized) { state.user = null; render(); }
+    }
+  }
+
+  function releaseSignature() {
+    if (state.archiveSigUrl) {
+      URL.revokeObjectURL(state.archiveSigUrl);
+      state.archiveSigUrl = '';
+    }
+  }
+
+  async function openApproved(type, period, version) {
+    const host = $('#arView');
+    host.innerHTML = '<div class="muted">Opening the signed copy…</div>';
+    try {
+      const rep = (await TB.api(`/api/approved/${type}/${period}/${version}?` + siteQ())).report;
+      releaseSignature();
+      if (rep.approverSignaturePath) {
+        // The stored signature image, so the on-screen copy carries the same
+        // signature as the PDF instead of a "see the PDF" placeholder.
+        try {
+          state.archiveSigUrl = URL.createObjectURL(
+            await TB.api(`/api/approved/${type}/${period}/${version}/signature?` + siteQ())
+          );
+        } catch (_) { /* signature missing — the rest of the copy still opens */ }
+      }
+      state.archiveDoc = rep;
+      host.innerHTML = `
+        <div class="row noprint" style="justify-content:space-between;align-items:center;">
+          <div>${siteBadge(state.site, true)} <b>${esc(TYPE_LABELS[type] || type)}</b> — ${esc(period)} —
+            version ${esc(String(version))} <span class="status-approved">APPROVED</span>
+            ${rep.approvedByName ? ` · signed by ${esc(rep.approvedByName)} on ${esc((rep.approvedAt || '').slice(0, 10))}` : ''}</div>
+          <div class="row">
+            <button id="arDocPdf" class="btn">Export PDF</button>
+            <button id="arDocPrint" class="btn">Print</button>
+            <button id="arDocClose" class="btn">Close</button>
+          </div>
+        </div>
+        <div class="muted noprint" style="margin:6px 0;">This is the permanent copy saved when it was approved —
+          it can never be edited. A later correction becomes a new version and leaves this one untouched.</div>
+        <div id="arDoc" style="margin-top:8px;"></div>`;
+      $('#arDoc').innerHTML = TBDoc.render(
+        type, rep, rep.branchConfigSnapshot || state.branchCfg, state.logoSrc,
+        { signatureUrl: state.archiveSigUrl }
+      );
+      TBFit.attach($('#arDoc'), { refit: true });
+
+      $('#arDocPdf').addEventListener('click', () => busy($('#arDocPdf'), 'Preparing PDF…', async () => {
+        try {
+          await downloadBlob(
+            () => TB.api(`/api/approved/${type}/${period}/${version}/pdf?` + siteQ()),
+            pdfName(type, period, version)
+          );
+        } catch (e) { alert('PDF failed: ' + e.message); }
+      }));
+      // Printing an archived copy hides the rest of the page for that one job.
+      $('#arDocPrint').addEventListener('click', () => {
+        document.body.classList.add('print-archive');
+        const done = () => document.body.classList.remove('print-archive');
+        window.addEventListener('afterprint', done, { once: true });
+        window.print();
+        setTimeout(done, 1000); // Safari does not always fire afterprint
+      });
+      $('#arDocClose').addEventListener('click', () => {
+        releaseSignature();
+        state.archiveDoc = null;
+        host.innerHTML = '';
+      });
+      host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      host.innerHTML = `<span class="err">${esc(e.message)}</span>`;
     }
   }
 
@@ -1170,6 +1321,14 @@
     if (logoSrc) state.logoSrc = logoSrc;
     window.addEventListener('online', () => startup());
     window.addEventListener('offline', render);
+    // Half-typed corrections must not vanish because a tab was closed.
+    window.addEventListener('beforeunload', (e) => {
+      const root = docRoot();
+      if (state.editMode && root && TBDoc.isDirty(root)) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
     await startup();
   }
 

@@ -41,24 +41,27 @@
   max-height: 75vh;
   overflow: auto;
 }
+/* Printing a WAIVER DETAIL blanks the rest of the page. Scoped to the class
+   the Print button sets: without that scope it also blanked the back-office
+   documents, so the Print button on a report produced empty paper. */
 @media print {
   body {
     background: #fff;
   }
 
   /* Hide everything */
-  body * {
+  body.print-detail * {
     visibility: hidden !important;
   }
 
   /* Show only the submission detail modal */
-  #detailModal,
-  #detailModal * {
+  body.print-detail #detailModal,
+  body.print-detail #detailModal * {
     visibility: visible !important;
   }
 
   /* Remove modal positioning and shadows */
-  #detailModal {
+  body.print-detail #detailModal {
     position: static !important;
   }
 
@@ -66,6 +69,11 @@
     box-shadow: none !important;
     border: none !important;
   }
+
+  /* Printing a back-office document: the local device sections stay off. */
+  body:not(.print-detail) #pinCard,
+  body:not(.print-detail) #mgrCard,
+  body:not(.print-detail) #detailModal { display: none !important; }
 }
 
 /* Sales filters: keep year, month, day exactly same width */
@@ -313,6 +321,7 @@
   <script src="../config.js"></script>
   <script src="../shared.js"></script>
   <script src="../printdoc.js"></script>
+  <script src="../docfit.js"></script>
   <script src="../backoffice.js"></script>
   <script src="./manager.js"></script>
   <script>

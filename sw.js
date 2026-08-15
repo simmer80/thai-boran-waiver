@@ -1,4 +1,4 @@
-const CACHE_NAME = 'thai-boran-waiver-v17';
+const CACHE_NAME = 'thai-boran-waiver-v18';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './shared.js',
   './sync.js',
   './printdoc.js',
+  './docfit.js',
   './backoffice.js',
   './manifest.json',
 

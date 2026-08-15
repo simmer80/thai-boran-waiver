@@ -105,9 +105,10 @@
         try { msg = (await res.json()).error || msg; } catch (_) {}
         throw new Error(msg);
       }
-      return res.headers.get('content-type') && res.headers.get('content-type').includes('pdf')
-        ? res.blob()
-        : res.json();
+      // Binary answers (PDF exports, the approver's signature image) come
+      // back as blobs; everything else is JSON.
+      const ct = res.headers.get('content-type') || '';
+      return ct.includes('pdf') || ct.startsWith('image/') ? res.blob() : res.json();
     } finally {
       clearTimeout(wakingTimer);
       wakingTimer = null;
