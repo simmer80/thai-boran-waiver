@@ -194,9 +194,38 @@
     }
   }
 
+  // --------------------------------------------------- shared therapists
+  // Active therapist list (id + full name only) for the waiver picker.
+  // Cached exactly like prices: refreshed on every successful fetch so the
+  // picker keeps working offline with the last-known list; an empty answer
+  // never clobbers a populated cache.
+  function cachedTherapists() {
+    try {
+      const a = JSON.parse(localStorage.getItem('tb_therapists') || '[]');
+      return Array.isArray(a) ? a : [];
+    } catch { return []; }
+  }
+  async function refreshTherapists() {
+    if (!navigator.onLine) return { offline: true };
+    try {
+      const res = await fetch((CFG.apiBase || '') + '/api/therapists/public', { cache: 'no-store' });
+      if (!res.ok) throw new Error('fetch failed');
+      const out = await res.json();
+      if (!Array.isArray(out.therapists)) return { ok: false };
+      const before = localStorage.getItem('tb_therapists') || '';
+      const after = JSON.stringify(out.therapists);
+      const changed = before !== after && out.therapists.length > 0;
+      if (out.therapists.length > 0) localStorage.setItem('tb_therapists', after);
+      document.dispatchEvent(new CustomEvent('tb:therapists', { detail: { changed, count: out.therapists.length } }));
+      return { ok: true, changed };
+    } catch (_) {
+      return { ok: false }; // cache stays; picker keeps working offline
+    }
+  }
+
   window.TB = {
     CFG, injectNav, updateNetChip, api, login, logout, me, cachedUser, setCachedUser, showWaking,
     SITES, deviceSite, setDeviceSite, siteLabel, refreshPrices,
-    token, setToken,
+    token, setToken, cachedTherapists, refreshTherapists,
   };
 })();

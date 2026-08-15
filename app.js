@@ -849,7 +849,8 @@ async function submit() {
     const address = el('address').value.trim();
     const contact = el('contact').value.trim();
     const services = el('services').value;
-    const therapist = el('therapist').value.trim();
+    const therapistPick = selectedTherapist();
+    const therapist = therapistPick.name;   // display-name snapshot
     const addons = selectedAddonsText();
     const timestart = el('timestart').value.trim();
 
@@ -906,6 +907,7 @@ async function submit() {
       synced: false, // pushed to the server by sync.js when online
       timestamp: nowTimestamp(),
       name, date, address, contact, services, therapist, addons, timestart,
+      therapistId: therapistPick.id,        // linkage key for commission + filters
       conditions: cond,
       sigFile,
       photoFile,
@@ -1072,6 +1074,44 @@ function setupServices() {
   }
 }
 
+// Therapist picker: ACTIVE therapists from the shared org list (cached
+// locally like prices, so it works offline). Option value = therapistId,
+// text = full name — no more free-text mismatches like "Novim" vs "novim".
+function setupTherapistPicker() {
+  const sel = el('therapist');
+  if (!sel || sel.tagName !== 'SELECT') return;
+
+  function rebuild() {
+    const keep = sel.value; // preserve the current choice across refreshes
+    const list = (window.TB && TB.cachedTherapists()) || [];
+    sel.innerHTML = '';
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = list.length ? '— choose therapist —' : '— no therapist list yet (connect once) —';
+    sel.appendChild(ph);
+    for (const t of list) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.fullName;
+      sel.appendChild(opt);
+    }
+    if (keep && list.some((t) => t.id === keep)) sel.value = keep;
+  }
+
+  rebuild();
+  document.addEventListener('tb:therapists', rebuild);
+  sel.addEventListener('change', validate); // selects fire change, not input
+}
+
+function selectedTherapist() {
+  const sel = el('therapist');
+  const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+  return {
+    id: (sel && sel.value) || '',
+    name: opt && sel.value ? opt.textContent : '',
+  };
+}
+
 function setupEvents() {
   // Form watchers
     ['name','contact','therapist'].forEach((id) => el(id).addEventListener('input', validate));
@@ -1227,6 +1267,7 @@ async function init() {
   }
 
   setupServices();
+  setupTherapistPicker();
   setupAddons();
   setupSignature();
   setupEvents();

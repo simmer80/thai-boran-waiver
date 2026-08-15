@@ -362,9 +362,12 @@
       const out = await TB.api('/api/sessions?' + q.toString());
       state.sessions = out.records;
       $('#fMsg').textContent = `${out.records.length} record(s)`;
+      const linked = (r) => state.therapists.some((t) => t.id === r.therapistId);
       const rows = out.records.map((r) => `<tr data-id="${esc(r.id)}">
         <td>${esc(r.date)}</td><td>${esc(r.timestart)}</td><td>${esc(r.customer)}</td>
-        <td>${esc(r.therapistName || therapistName(r.therapistId))}</td>
+        <td>${linked(r)
+          ? esc(r.therapistName || therapistName(r.therapistId))
+          : `<span class="err" title="The typed name matches no therapist — open Edit and pick the right one; the commission will be recalculated.">⚠ unlinked: ${esc(r.therapistName || r.therapistId || '(blank)')}</span>`}</td>
         <td>${esc(r.service)}</td><td>${esc(r.addons)}</td>
         <td>${esc(r.stubNumber)}</td><td>${esc(r.hours)}</td>
         <td>${r.paymentMethod === 'bpi' ? 'BPI' : 'Cash'}</td>
@@ -405,8 +408,12 @@
     const pickable = state.therapists.filter((t) => t.active !== false || t.id === r.therapistId);
     const opts = pickable.map((t) =>
       `<option value="${esc(t.id)}" ${t.id === r.therapistId ? 'selected' : ''}>${esc(t.fullName)}${t.active === false ? ' (inactive)' : ''}</option>`).join('');
+    const isLinked = state.therapists.some((t) => t.id === r.therapistId);
     $('#sessEdit').innerHTML = `<div class="panel" style="background:#f8fafc;margin-top:10px;">
       <b>Edit: ${esc(r.customer)} — ${esc(r.date)} ${esc(r.timestart)}</b>
+      ${!isLinked ? `<div class="err" style="margin-top:6px;">⚠ Unlinked therapist — the waiver recorded
+        "${esc(r.therapistName || r.therapistId || '(blank)')}", which matches no therapist.
+        Pick the correct one below; the commission recalculates from their rate.</div>` : ''}
       <div class="row" style="margin-top:8px;">
         <div><label>Therapist</label><select id="eTher"><option value="">(unassigned)</option>${opts}</select></div>
         <div><label>Stub # (waiver number)</label><input id="eStub" value="${esc(r.stubNumber)}" style="width:110px" /></div>
@@ -420,10 +427,14 @@
         <button id="eCancel" class="btn">Cancel</button>
         <span id="eMsg" role="status"></span>
       </div></div>`;
-    $('#eAuto').addEventListener('click', () => {
+    const recalcFromRate = () => {
       const t = state.therapists.find((x) => x.id === $('#eTher').value);
       if (t) $('#eComm').value = Math.round((t.commissionRate || 0) * (Number(r.net) || 0) * 100) / 100;
-    });
+    };
+    $('#eAuto').addEventListener('click', recalcFromRate);
+    // Relinking an unlinked record: recalculate the commission from the
+    // newly chosen therapist's rate automatically (still editable pre-save).
+    if (!isLinked) $('#eTher').addEventListener('change', recalcFromRate);
     $('#eCancel').addEventListener('click', () => { $('#sessEdit').innerHTML = ''; });
     $('#eSave').addEventListener('click', () => busy($('#eSave'), 'Saving…', async () => {
       $('#eMsg').textContent = 'Saving…';

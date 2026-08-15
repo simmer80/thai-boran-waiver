@@ -239,7 +239,9 @@ Monday to Friday &amp; Holidays
       <div class="grid" style="margin-top:10px;">
         <div>
           <label for="therapist">Therapist</label>
-          <input id="therapist" type="text" class="required-field" />
+          <select id="therapist" class="required-field">
+            <option value="">— choose therapist —</option>
+          </select>
         </div>
 
         <div>
@@ -334,6 +336,7 @@ Monday to Friday &amp; Holidays
       if (typeof updateTotalPreview === 'function') updateTotalPreview();
     });
     TB.refreshPrices();
+    TB.refreshTherapists(); // keep the therapist picker's offline cache current
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js');
     }
