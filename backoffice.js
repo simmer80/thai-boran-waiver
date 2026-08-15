@@ -105,8 +105,9 @@
     if (nw.length < 10) { msg.textContent = 'The new password must be at least 10 characters.'; return false; }
     if (nw !== nw2) { msg.textContent = 'The two new passwords do not match.'; return false; }
     try {
-      await TB.api('/api/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: nw } });
-      state.user = await TB.me();  // refreshed flag + new cookie already set
+      const out = await TB.api('/api/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: nw } });
+      if (out.token) TB.setToken(out.token); // old token died with the tokenVersion bump
+      state.user = await TB.me();  // refreshed flag under the fresh token
       return true;
     } catch (e) {
       msg.textContent = e.message || 'Change failed';

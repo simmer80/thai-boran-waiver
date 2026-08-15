@@ -56,6 +56,23 @@
     }
   }
 
+  // ---------------------------------------------------------- bearer token
+  // The API lives on a different origin (Render) from this page (GitHub
+  // Pages), so its session cookie is a THIRD-PARTY cookie — iPad Safari's
+  // ITP refuses to store/send it (desktop browsers cope, which is why the
+  // laptop worked). The signed session token therefore travels as an
+  // Authorization: Bearer header, stored in localStorage. Reading it fresh
+  // from localStorage on every call keeps multiple tabs consistent; a 401
+  // clears it everywhere. Kiosk devices + short expiry + server-side
+  // tokenVersion invalidation make localStorage acceptable here.
+  function token() {
+    return localStorage.getItem('tb_token') || '';
+  }
+  function setToken(t) {
+    if (t) localStorage.setItem('tb_token', t);
+    else localStorage.removeItem('tb_token');
+  }
+
   async function api(path, options = {}) {
     const url = (CFG.apiBase || '') + path;
     if (!navigator.onLine) {
@@ -65,13 +82,20 @@
     }
     if (!wakingTimer) wakingTimer = setTimeout(() => showWaking(true), 3500);
     try {
+      const t = token(); // fresh from localStorage each call (multi-tab safe)
       const res = await fetch(url, {
-        credentials: 'include',
-        headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+        credentials: 'include', // cookie stays as the secondary path
         ...options,
+        headers: {
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(t ? { Authorization: 'Bearer ' + t } : {}),
+          ...(options.headers || {}),
+        },
         body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
       });
       if (res.status === 401) {
+        setToken(null);          // dead/expired/invalid token — drop it
+        setCachedUser(null);
         const e = new Error('not logged in');
         e.unauthorized = true;
         throw e;
@@ -104,11 +128,13 @@
 
   async function login(username, password) {
     const out = await api('/api/auth/login', { method: 'POST', body: { username, password } });
+    if (out.token) setToken(out.token); // primary auth from here on
     setCachedUser(out.user);
     return out.user;
   }
   async function logout() {
     try { await api('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+    setToken(null);
     setCachedUser(null);
   }
   async function me() {
@@ -171,5 +197,6 @@
   window.TB = {
     CFG, injectNav, updateNetChip, api, login, logout, me, cachedUser, setCachedUser, showWaking,
     SITES, deviceSite, setDeviceSite, siteLabel, refreshPrices,
+    token, setToken,
   };
 })();
