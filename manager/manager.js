@@ -1014,6 +1014,15 @@ function init() {
     }
   });
 
+  // A receptionist signed in on the Manager tab: the back office shows the
+  // wrong-role screen, and these local sections (client photos, medical
+  // notes, sales history) must not be sitting under it offering a PIN.
+  document.addEventListener("tb:denied", () => {
+    forceLock();
+    hideBlock("pinCard");
+    hideBlock("mgrCard");
+  });
+
   // Auto-lock whenever the manager page is left or hidden (walk-away
   // privacy: the local section holds client photos and medical data).
   window.addEventListener("pagehide", () => {

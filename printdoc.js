@@ -77,14 +77,20 @@
       ? cellInput('data-e="inputby"', inputBy || '', 'text', 'Raw data input by')
       : `<b>${esc(inputBy || '')}</b>`;
     const sig = o.signatureUrl
-      ? `<img src="${escA(o.signatureUrl)}" alt="Approved signature" />`
+      ? `<img src="${escA(o.signatureUrl)}" alt="Approving manager signature" />`
       : (approved ? '<i>(signature on official PDF)</i>' : '');
+    // The receptionist signs when she submits; the manager signs on approval.
+    // A finished document therefore carries both, each over its own name.
+    const subSig = o.submitterSignatureUrl
+      ? `<img src="${escA(o.submitterSignatureUrl)}" alt="Submitting receptionist signature" />`
+      : '';
     return `<div class="foot">
       <div class="sigblock">
         <div style="text-align:left">Raw data input by:</div>
-        <div class="sigline"></div>
+        <div class="sigline">${subSig}</div>
         <div class="signame${o.edit ? ' ed' : ''}">${left}</div>
         <div>Signature over printed name</div>
+        ${submitLine(report, inputBy)}
       </div>
       <div class="sigblock">
         <div style="text-align:left">Reviewed by:</div>
@@ -94,6 +100,21 @@
         ${approved ? `<div>Approved ${esc(stamp(report.approvedAt))}</div>` : ''}
       </div>
     </div>`;
+  }
+
+  // "Signature over printed name" has to hold. The printed name is who keyed
+  // the raw data (often several people over a week); the signature belongs to
+  // whoever submitted the document. When they are not the same, the document
+  // says who actually signed rather than letting the two silently disagree.
+  function submitLine(report, inputBy) {
+    if (!report.submittedAt) return '';
+    const signer = report.submittedByName || '';
+    const when = esc(stamp(report.submittedAt));
+    const named = String(inputBy || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const covered = signer && named.length === 1 && named[0] === signer;
+    return covered || !signer
+      ? `<div>Submitted ${when}</div>`
+      : `<div>Signed by ${esc(signer)} · ${when}</div>`;
   }
 
   // Approval stamps are stored as full ISO timestamps; on paper they read as
@@ -125,10 +146,20 @@
       for (let i = 0; i < MAX_BLOCKS; i++) {
         const b = r.blocks[i] || {};
         if (o.edit) {
-          const at = (f) => `${kA} data-i="${i}" data-f="${f}" data-e="blk"`;
-          tds += `<td class="ed">${cellInput(at('hours'), b.hours ? String(b.hours) : '', 'money', 'hours')}</td>
-            <td class="ed">${cellInput(at('stubNumber'), b.stubNumber || '', 'text', 'stub number')}</td>
-            <td class="ed">${cellInput(at('commission'), raw(b.commission), 'money', 'commission')}</td>`;
+          // Each cell carries the id of the session record it came from, so
+          // saving writes the correction back to that record rather than
+          // burying it in a document-only override. A block holding a value
+          // with no record behind it is marked: it stays document-level.
+          const sid = b.sessionId ? ` data-sid="${escA(b.sessionId)}"` : '';
+          const filled = !!(b.hours || b.stubNumber || b.commission);
+          const cls = 'ed' + (filled && !b.sessionId ? ' nosrc' : '');
+          const tip = filled && !b.sessionId
+            ? ' title="No session record behind this block — the value is kept on the document only."'
+            : '';
+          const at = (f) => `${kA} data-i="${i}" data-f="${f}" data-e="blk"${sid}`;
+          tds += `<td class="${cls}"${tip}>${cellInput(at('hours'), b.hours ? String(b.hours) : '', 'money', 'hours')}</td>
+            <td class="${cls}"${tip}>${cellInput(at('stubNumber'), b.stubNumber || '', 'text', 'stub number')}</td>
+            <td class="${cls}"${tip}>${cellInput(at('commission'), raw(b.commission), 'money', 'commission')}</td>`;
         } else {
           tds += r.blocks[i]
             ? `<td>${esc(b.hours || '')}</td><td>${esc(b.stubNumber)}</td><td>${money(b.commission)}</td>`
@@ -370,6 +401,9 @@
       const rp = (patch.rows[el.dataset.k] = patch.rows[el.dataset.k] || { blocks: {} });
       const bp = (rp.blocks[el.dataset.i] = rp.blocks[el.dataset.i] || {});
       bp[el.dataset.f] = el.dataset.f === 'stubNumber' ? el.value.trim() : num(el.value);
+      // The server routes the edit by this: with an id it corrects the
+      // session record, without one it stores a document-level override.
+      if (el.dataset.sid) bp.sessionId = el.dataset.sid;
     });
     return patch;
   }

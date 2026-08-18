@@ -26,7 +26,8 @@
     user: null, therapists: [], users: [], branchCfg: {},
     report: null, reportType: 'daily-commission', reportPeriod: '',
     editMode: false,     // editing the values IN the document template
-    archive: [], archiveDoc: null, archiveSigUrl: '',
+    archive: [], archiveDoc: null, archiveSigUrl: '', archiveSubSigUrl: '',
+    liveSubSigUrl: '', liveSubSigKey: undefined,
     sessions: [], editingId: null,
     site: '',            // which parlor's data this screen shows
     prices: [],          // org-shared price sets (server copy, manager panel)
@@ -80,7 +81,46 @@
     }
     if (!state.user) { renderLogin(); return; }
     if (state.user.mustChangePassword) { renderForcedChange(); return; }
+    // The Manager tab is manager-only, at the UI level too. The server has
+    // always refused a receptionist's manager requests, but the tab still
+    // rendered and greeted her by name, which reads like access. Nothing of
+    // the manager UI is built for a non-manager now.
+    if (state.managerMode && !isManager(state.user)) { renderNotManager(); return; }
     renderMain();
+  }
+
+  const isManager = (u) => !!u && (u.role === 'manager' || u.role === 'admin');
+
+  // Wrong-role screen for the Manager tab: says so plainly and offers the
+  // two useful ways out — go where this account belongs, or switch account.
+  function renderNotManager() {
+    state.mount.innerHTML = `
+      <div class="panel" style="max-width:520px;margin:30px auto;text-align:center;">
+        <div style="font-size:34px;line-height:1;margin-bottom:6px;">🔒</div>
+        <h2 style="margin-top:0">Manager access requires a manager login</h2>
+        <p class="muted" style="font-size:14px;">
+          You are signed in as <b>${esc(state.user.name)}</b>
+          (${esc(state.user.role)}). This tab is for the manager only —
+          tasks, approvals, prices, therapists, users and the Drive mirror
+          all live here.
+        </p>
+        <p class="muted" style="font-size:14px;">
+          Everything you need is in the <b>Receptionist</b> tab: waivers,
+          sessions and sales, the documents, and the approved copies.
+        </p>
+        <div class="row" style="justify-content:center;margin-top:12px;">
+          <a class="btn primary" href="../reception/">Go to the Receptionist tab</a>
+          <button id="boSwitch" class="btn">Sign out / switch account</button>
+        </div>
+      </div>`;
+    // The page's own local-device sections (PIN card, history, sales) are
+    // part of the Manager tab too — they hide themselves on this signal.
+    document.dispatchEvent(new CustomEvent('tb:denied', { detail: { role: state.user.role } }));
+    $('#boSwitch').addEventListener('click', () => busy($('#boSwitch'), 'Signing out…', async () => {
+      await TB.logout();
+      state.user = null;
+      render();
+    }));
   }
 
   // Change-password form (shared markup). mode 'forced' locks the user here
@@ -468,18 +508,19 @@
     $('#eSave').addEventListener('click', () => busy($('#eSave'), 'Saving…', async () => {
       $('#eMsg').textContent = 'Saving…';
       try {
-        const upd = {
-          ...r,
+        // Same server path the document write-back uses: one audit trail,
+        // and the correction survives a later re-sync from the tablet.
+        const fields = {
           therapistId: $('#eTher').value,
           therapistName: therapistName($('#eTher').value) || r.therapistName,
           stubNumber: $('#eStub').value.trim(),
           hours: Number($('#eHours').value) || 0,
           paymentMethod: $('#ePay').value,
           commission: Number($('#eComm').value) || 0,
-          commissionManual: true,
-          updatedAt: Date.now(),
         };
-        await TB.api('/api/sessions/sync?' + siteQ(), { method: 'POST', body: { records: [upd] } });
+        await TB.api(`/api/sessions/${encodeURIComponent(r.id)}?` + siteQ(), {
+          method: 'PATCH', body: { date: r.date, fields },
+        });
         $('#sessEdit').innerHTML = '';
         await loadSessions(); // refresh writes its own count into #fMsg…
         const m = $('#fMsg');  // …then prepend the success confirmation
@@ -542,6 +583,7 @@
 
     if (!editable) state.editMode = false;
     renderDocument();
+    loadSubmitterSignature();
 
     if ($('#aEdit')) $('#aEdit').addEventListener('click', () => {
       if (state.editMode && !confirmDiscard()) return;
@@ -562,9 +604,20 @@
     }));
     $('#aPrint').addEventListener('click', () => window.print());
     if ($('#aSubmit')) $('#aSubmit').addEventListener('click', () => busy($('#aSubmit'), 'Submitting…', async () => {
-      if (!confirm('Submit this document for manager approval?\n\nThe manager will see it in the Tasks list, review it, and approve it. You can still make changes until it is approved.')) return;
+      // Submitting is signing. She draws her signature here and it is kept
+      // with THIS version of the document, printed under "Raw data input by"
+      // beside the manager's signature on the approved paper.
+      const signature = await TBSigPad.capture({
+        title: "Sign to submit for approval",
+        subtitle: TYPE_LABELS[r.type] + " — " + r.period + " — " +
+          (SITE_LABELS[state.site] || state.site) +
+          ". Your signature goes on the document under Raw data input by." +
+          " The manager reviews and signs it after you.",
+        name: state.user.name,
+      });
+      if (!signature) return;   // cancelled — nothing is submitted
       try {
-        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/submit?` + siteQ(), { method: 'POST' })).report;
+        state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/submit?` + siteQ(), { method: 'POST', body: { signature } })).report;
         renderReport();
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Submitted ✓ — waiting for manager approval';
         const mine465 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine465) { m.className = 'muted'; m.textContent = ''; } }, 5000);
@@ -606,10 +659,34 @@
   function renderDocument() {
     const r = state.report;
     const host = $('#rDoc');
-    host.innerHTML = TBDoc.render(r.type, r, state.branchCfg, state.logoSrc, { edit: state.editMode });
+    host.innerHTML = TBDoc.render(r.type, r, state.branchCfg, state.logoSrc, {
+      edit: state.editMode,
+      submitterSignatureUrl: state.liveSubSigUrl,
+    });
     TBFit.attach(host, { refit: true });
     renderEditBar();
     if (state.editMode) bindEditing();
+  }
+
+  // The receptionist's submission signature for the document on screen, so
+  // the manager sees who signed it while reviewing — not only after
+  // approval, and not only in the PDF. Re-fetched only when it changes.
+  async function loadSubmitterSignature() {
+    const r = state.report;
+    const key = (r && r.submitterSignaturePath) || '';
+    if (state.liveSubSigKey === key) return;
+    state.liveSubSigKey = key;
+    if (state.liveSubSigUrl) {
+      URL.revokeObjectURL(state.liveSubSigUrl);
+      state.liveSubSigUrl = '';
+    }
+    if (key) {
+      try {
+        const blob = await TB.api(`/api/reports/${r.type}/${r.period}/signature/submitter?` + siteQ());
+        state.liveSubSigUrl = URL.createObjectURL(blob);
+      } catch (_) { /* not fatal: the document still renders without it */ }
+    }
+    if (state.report === r) renderDocument();   // still the same document
   }
 
   // Unsaved work must never disappear silently — every route out of edit mode
@@ -711,12 +788,22 @@
     el.className = 'muted'; el.textContent = 'Saving…';
     try {
       const r = state.report;
-      state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/manual-values?` + siteQ(), {
+      const out = await TB.api(`/api/reports/${r.type}/${r.period}/manual-values?` + siteQ(), {
         method: 'POST', body: patch,
-      })).report;
+      });
+      state.report = out.report;
       renderReport(); // document re-renders from the server's answer, still in edit mode
       const m = $('#rMsg');
-      m.className = 'ok'; m.textContent = 'Saved ✓ — the document and its totals are updated';
+      m.className = 'ok';
+      // Daily-commission cells write back to the session records they came
+      // from, so the table above is now out of date — refresh it and say so.
+      const wb = out.writeBack;
+      const n = wb && wb.updatedSessions ? wb.updatedSessions.length : 0;
+      const orphan = wb && wb.unbacked ? wb.unbacked.length : 0;
+      m.textContent = 'Saved ✓ — the document and its totals are updated'
+        + (n ? ` · ${n} session record${n > 1 ? 's' : ''} corrected in Sessions & sales` : '')
+        + (orphan ? ` · ${orphan} cell${orphan > 1 ? 's' : ''} kept on the document only (no session record behind ${orphan > 1 ? 'them' : 'it'})` : '');
+      if (n) loadSessions();
       const mine645 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine645) { m.className = 'muted'; m.textContent = ''; } }, 4000);
     } catch (e) {
       el.className = 'err'; el.textContent = e.message;
@@ -794,9 +881,8 @@
   }
 
   function releaseSignature() {
-    if (state.archiveSigUrl) {
-      URL.revokeObjectURL(state.archiveSigUrl);
-      state.archiveSigUrl = '';
+    for (const k of ['archiveSigUrl', 'archiveSubSigUrl']) {
+      if (state[k]) { URL.revokeObjectURL(state[k]); state[k] = ''; }
     }
   }
 
@@ -806,15 +892,17 @@
     try {
       const rep = (await TB.api(`/api/approved/${type}/${period}/${version}?` + siteQ())).report;
       releaseSignature();
-      if (rep.approverSignaturePath) {
-        // The stored signature image, so the on-screen copy carries the same
-        // signature as the PDF instead of a "see the PDF" placeholder.
+      // Both stored signatures, so the on-screen copy carries exactly what
+      // the PDF does: the receptionist who submitted it and the manager who
+      // approved it, each over their own printed name.
+      const sigUrl = async (who) => {
         try {
-          state.archiveSigUrl = URL.createObjectURL(
-            await TB.api(`/api/approved/${type}/${period}/${version}/signature?` + siteQ())
-          );
-        } catch (_) { /* signature missing — the rest of the copy still opens */ }
-      }
+          const path = `/api/approved/${type}/${period}/${version}/signature${who ? '/' + who : ''}?`;
+          return URL.createObjectURL(await TB.api(path + siteQ()));
+        } catch (_) { return ''; }   // missing signature never blocks the copy
+      };
+      if (rep.approverSignaturePath) state.archiveSigUrl = await sigUrl('');
+      if (rep.submitterSignaturePath) state.archiveSubSigUrl = await sigUrl('submitter');
       state.archiveDoc = rep;
       host.innerHTML = `
         <div class="row noprint" style="justify-content:space-between;align-items:center;">
@@ -832,7 +920,7 @@
         <div id="arDoc" style="margin-top:8px;"></div>`;
       $('#arDoc').innerHTML = TBDoc.render(
         type, rep, rep.branchConfigSnapshot || state.branchCfg, state.logoSrc,
-        { signatureUrl: state.archiveSigUrl }
+        { signatureUrl: state.archiveSigUrl, submitterSignatureUrl: state.archiveSubSigUrl }
       );
       TBFit.attach($('#arDoc'), { refit: true });
 
