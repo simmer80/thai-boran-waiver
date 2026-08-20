@@ -66,13 +66,16 @@
   function askVersion() {
     return new Promise((resolve) => {
       const sw = navigator.serviceWorker;
-      if (!sw || !sw.controller) return resolve('');
+      // Straight after a first install nothing controls the page yet, so ask
+      // the active worker directly rather than showing "not installed".
+      const target = (sw && sw.controller) || (registration && registration.active);
+      if (!target) return resolve('');
       let done = false;
       const finish = (v) => { if (!done) { done = true; resolve(v || ''); } };
       try {
         const ch = new MessageChannel();
         ch.port1.onmessage = (e) => finish(e.data && e.data.version);
-        sw.controller.postMessage({ type: 'TB_VERSION' }, [ch.port2]);
+        target.postMessage({ type: 'TB_VERSION' }, [ch.port2]);
         setTimeout(() => finish(''), 1500);
       } catch (_) {
         finish('');
@@ -240,8 +243,12 @@
     version = await askVersion();
     renderFooter();
 
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloading) location.reload();
+    navigator.serviceWorker.addEventListener('controllerchange', async () => {
+      if (reloading) { location.reload(); return; }
+      // A worker just took over (first install, or an update applied in
+      // another tab): show what is actually running now.
+      version = await askVersion();
+      renderFooter();
     });
 
     watch(registration);
