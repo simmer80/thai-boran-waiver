@@ -150,6 +150,7 @@
 
   <script src="../config.js"></script>
   <script src="../shared.js"></script>
+  <script src="../update.js"></script>
   <script src="../sync.js"></script>
   <script src="../printdoc.js"></script>
   <script src="../docfit.js"></script>
@@ -160,7 +161,7 @@
     TB.injectNav('records');
     TBSync.init();
     TBRecords.init();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js');
+    TBUpdate.init({ swUrl: '../sw.js' });
   </script>
 </body>
 </html>

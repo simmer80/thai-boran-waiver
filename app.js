@@ -143,6 +143,27 @@ const state = {
   stream: null
 };
 
+// An update must never throw away a waiver that is part-way through. The
+// update prompt asks this before it reloads; anything it returns is shown to
+// the receptionist as "finish this first".
+function waiverInProgress() {
+  const filled = (id) => {
+    const n = el(id);
+    return !!(n && String(n.value || '').trim());
+  };
+  if (state.photoTaken || state.sigDirty) return "this client’s waiver is part-filled";
+  if (filled('name') || filled('contact') || filled('address')) return "this client’s waiver is part-filled";
+  if (state.addonsChecked.some(Boolean)) return "this client’s waiver is part-filled";
+  // Read the boxes themselves too, so this does not depend on when the form
+  // happens to copy them into state.
+  const boxes = document.querySelectorAll('.checks input[type="checkbox"], #addonsBox input[type="checkbox"]');
+  for (const b of boxes) if (b.checked && b.id !== 'consentPrivacy') return "this client’s waiver is part-filled";
+  const svc = el('services');
+  if (svc && svc.selectedIndex > 0) return "this client’s waiver is part-filled";
+  return null;
+}
+if (window.TBUpdate) TBUpdate.guard('waiver', waiverInProgress);
+
 function todayISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -594,7 +615,12 @@ async function openCameraModal() {
     await startStream();
   } catch (e) {
     showModal('modalCam', false);
-    alert('Camera access failed. Please allow camera permission in Safari settings.');
+    alert([
+      'The iPad did not let the app use the camera.',
+      '',
+      'Open Settings on the iPad, find this app, and turn Camera on.',
+      'Then come back and press "Take photo" again.',
+    ].join(String.fromCharCode(10)));
   }
 }
 
@@ -854,27 +880,38 @@ async function submit() {
     const addons = selectedAddonsText();
     const timestart = el('timestart').value.trim();
 
-        if (!name) return alert('Name is required');
+        if (!name) return alert('Please type the client’s name before saving.');
     if (!isValidName(name)) return alert('Please enter a valid name: letters, spaces, hyphens and apostrophes only.');
-    if (!date) return alert('Date is required');
-    if (!contact) return alert('Contact is required');
+    if (!date) return alert('Please choose the date before saving.');
+    if (!contact) return alert('Please type the client’s contact number before saving.');
 
-    if (!services) return alert('Services is required');
-    if (!therapist) return alert('Therapist is required');
+    if (!services) return alert('Please choose which massage the client is having.');
+    if (!therapist) return alert('Please choose the therapist before saving.');
 
-    if (!timestart) return alert('Time Start is required');
+    if (!timestart) return alert('Please set the time the massage starts.');
 
     if (el('c_other').checked && !el('other_text').value.trim()) {
       return alert("If 'Other medical conditions' is checked, please specify it.");
     }
 
-    if (isPhotoCaptureEnabled() && !state.photoTaken) return alert('Please take a photo first');
-    if (!state.sigDirty) return alert('Signature missing');
+    if (isPhotoCaptureEnabled() && !state.photoTaken) return alert([
+      'This client still needs a photo.',
+      '',
+      'Press "Take photo", then ask the client to sign.',
+      '',
+      'If the client does not want a photo, it can be skipped:',
+      'Front desk tab, This device, Client photo.',
+    ].join(String.fromCharCode(10)));
+    if (!state.sigDirty) return alert([
+      'The client still needs to sign.',
+      '',
+      'Ask them to sign in the white box with a finger, then press Save again.',
+    ].join(String.fromCharCode(10)));
 
     const cond = conditionsText();
 
     const safeName = sanitizeNameForFile(name);
-    if (!safeName) return alert('Name contains no valid characters for filenames');
+    if (!safeName) return alert('That name cannot be used for the photo file. Please type the client’s name in normal letters.');
 
     // Signature file
     const sigBlob = await canvasToPngBlob(el('sig'));
@@ -886,7 +923,7 @@ async function submit() {
     let photoFile = '';
 
     if (isPhotoCaptureEnabled()) {
-      if (!state.photoBlob) return alert('Photo missing');
+      if (!state.photoBlob) return alert('The photo did not save. Press "Take photo" and try once more.');
       photoBlob = state.photoBlob;
       photoFile = `${safeName}.jpg`;
     }
@@ -960,7 +997,13 @@ setTimeout(() => {
 await renderHistory();
 
   } catch (e) {
-    alert(e.message || String(e));
+    alert([
+      'The waiver could not be saved.',
+      '',
+      (e.message || String(e)),
+      '',
+      'Nothing has been lost — check the form and try Save again.',
+    ].join(String.fromCharCode(10)));
   }
 }
 
@@ -1186,7 +1229,7 @@ applyPhotoGate();
     if (consent && !consent.checked) return;
 
     const name = el('name').value.trim();
-    if (!name) return alert('Please enter your name first');
+    if (!name) return alert('Please type the client’s name first — the photo is filed under it.');
 
     // Option A: native camera picker (works on iPad over http)
     const inp = el('photoInput');

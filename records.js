@@ -204,7 +204,7 @@
               () => TB.api(`/api/approved/${b.dataset.t}/${b.dataset.p}/${b.dataset.v}/pdf?` + siteQ()),
               pdfName(b.dataset.t, b.dataset.p, b.dataset.v)
             );
-          } catch (e) { alert('PDF failed: ' + e.message); }
+          } catch (e) { TB.sorry(e, 'make the PDF'); }
         })));
     } catch (e) {
       msg.className = 'err';
@@ -257,7 +257,7 @@
         try {
           await downloadBlob(() => TB.api(`/api/approved/${type}/${period}/${version}/pdf?` + siteQ()),
             pdfName(type, period, version));
-        } catch (e) { alert('PDF failed: ' + e.message); }
+        } catch (e) { TB.sorry(e, 'make the PDF'); }
       }));
       $('#arDocPrint').addEventListener('click', () => {
         document.body.classList.add('print-archive');

@@ -319,6 +319,7 @@ Monday to Friday &amp; Holidays
 
   <script src="./config.js"></script>
   <script src="./shared.js"></script>
+  <script src="./update.js"></script>
   <script src="./sync.js"></script>
   <script src="./app.js"></script>
   <script>
@@ -337,9 +338,7 @@ Monday to Friday &amp; Holidays
     });
     TB.refreshPrices();
     TB.refreshTherapists(); // keep the therapist picker's offline cache current
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js');
-    }
+    TBUpdate.init({ swUrl: './sw.js' });
   </script>
 </body>
 </html>

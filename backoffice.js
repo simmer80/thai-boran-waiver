@@ -208,7 +208,7 @@
         if (!state.user.mustChangePassword) await loadBasics();
         render();
       } catch (e) {
-        $('#boLoginMsg').textContent = e.offline ? 'Cannot reach the server (offline?)' : (e.message || 'Login failed');
+        $('#boLoginMsg').textContent = TB.explain(e, 'sign you in');
       }
     });
     $('#boLogin').addEventListener('click', go);
@@ -835,8 +835,10 @@
       renderReport();
     } catch (e) {
       $('#rMsg').className = 'err';
-      $('#rMsg').textContent = e.message;
-      setTimeout(() => { $('#rMsg').className = 'muted'; }, 4000);
+      $('#rMsg').textContent = TB.explain(e, generate ? 'build the document' : 'open the document')
+        .split(String.fromCharCode(10))[0];
+      $('#rMsg').title = TB.explain(e, generate ? 'build the document' : 'open the document');
+      setTimeout(() => { $('#rMsg').className = 'muted'; }, 8000);
     }
   }
 
@@ -881,7 +883,7 @@
         a.href = url; a.download = `ThaiBoran-${PDF_SITE[state.site] || state.site}_${PDF_DOC[r.type]}_${r.period}${r.status === 'approved' ? '_approved' : ''}.pdf`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 2000);
-      } catch (e) { alert('PDF failed: ' + e.message); }
+      } catch (e) { TB.sorry(e, 'make the PDF'); }
     }));
     $('#aPrint').addEventListener('click', () => window.print());
     if ($('#aSubmit')) $('#aSubmit').addEventListener('click', () => busy($('#aSubmit'), 'Submitting…', async () => {
@@ -902,7 +904,7 @@
         renderReport();
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Submitted ✓ — waiting for manager approval';
         const mine465 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine465) { m.className = 'muted'; m.textContent = ''; } }, 5000);
-      } catch (e) { alert('Submit failed: ' + e.message); }
+      } catch (e) { TB.sorry(e, 'send this document to the manager'); }
     }));
     if ($('#aApprove')) $('#aApprove').addEventListener('click', () => busy($('#aApprove'), 'Approving…', async () => {
       if (!confirm(`Approve this ${SITE_LABELS[state.site] || state.site} document?\n\nYour stored signature and the date will be stamped on it, and a permanent copy is saved that can never be edited (corrections later create a new version).`)) return;
@@ -913,7 +915,7 @@
         // the signed copy now shows up under Sales & history
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Approved ✓ — signed and archived';
         const mine475 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine475) { m.className = 'muted'; m.textContent = ''; } }, 5000);
-      } catch (e) { alert('Approve failed: ' + e.message); }
+      } catch (e) { TB.sorry(e, 'approve this document'); }
     }));
   }
 
@@ -1571,6 +1573,18 @@
     } finally {
       startingUp = false;
     }
+  }
+
+  // An update must not reload over corrections that are typed but not saved.
+  if (window.TBUpdate) {
+    TBUpdate.guard('document', () => {
+      const root = docRoot();
+      return state.editMode && root && TBDoc.isDirty(root)
+        ? 'a document has corrections you have not saved'
+        : null;
+    });
+    TBUpdate.guard('session-edit', () =>
+      ($('#sessEdit') && $('#sessEdit').innerHTML) ? 'a session is open for editing' : null);
   }
 
   // ------------------------------------------------------------------ init

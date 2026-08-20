@@ -124,6 +124,82 @@
     }
   }
 
+  // ------------------------------------------------------- plain English
+  // Every failure the staff can see goes through here. The server's own
+  // wording is for developers ("report not found — generate it first"); what
+  // a receptionist needs is what went wrong and what to do about it, in the
+  // words she would use. `doing` names the action in progress, e.g.
+  // "export the PDF", so the sentence reads naturally either way.
+  function explain(err, doing) {
+    const what = doing ? doing : 'do that';
+    if (!err) return `Could not ${what}. Please try again.`;
+    const msg = String((err && err.message) || err || '');
+
+    if (err.offline || !navigator.onLine) {
+      return `The iPad has no WiFi at the moment, so it could not ${what}.\n\n` +
+        `Waivers you take are still saved on this iPad and will be sent by ` +
+        `themselves when the WiFi is back. Check the WiFi and try again.`;
+    }
+    if (err.badCredentials) {
+      return [
+        'That username or password was not recognised.',
+        '',
+        'Capital letters in the username do not matter, but the password must be typed exactly.',
+        'If you have forgotten it, ask the manager to reset it for you.',
+      ].join(String.fromCharCode(10));
+    }
+    if (err.unauthorized || /not logged in/i.test(msg)) {
+      return `You have been signed out (this happens after a while for safety), ` +
+        `so the app could not ${what}.\n\nSign in again and repeat what you were doing.`;
+    }
+    if (/invalid credentials/i.test(msg)) {
+      return `That username or password was not recognised.\n\n` +
+        `Capital letters in the username do not matter, but the password must be exact. ` +
+        `If you have forgotten it, ask the manager to reset it for you.`;
+    }
+    if (/password change required/i.test(msg)) {
+      return `You need to choose your own password before you can continue. ` +
+        `Type the temporary password the manager gave you, then pick a new one.`;
+    }
+    if (/report not found/i.test(msg)) {
+      return `That document has not been made yet for the day you picked.\n\n` +
+        `Open Documents, choose the document and the date, then press ` +
+        `"Create / refresh from records".`;
+    }
+    if (/signature is required/i.test(msg)) {
+      return `The document has to be signed before it goes to the manager.\n\n` +
+        `Press "Submit for approval" again and sign in the white box with your finger.`;
+    }
+    if (/already approved/i.test(msg)) {
+      return `The manager has already approved this document, so it cannot be changed.\n\n` +
+        `If something on it is wrong, press "Create / refresh from records" to start a new version.`;
+    }
+    if (/cannot approve/i.test(msg)) {
+      return `This document is not waiting for approval — the front desk may have ` +
+        `changed it since it was sent.\n\nAsk them to submit it again, then approve the new version.`;
+    }
+    if (/unknown site/i.test(msg)) {
+      return `No parlor is chosen. Pick Panacan or Airport Road at the top of the screen and try again.`;
+    }
+    if (/must be the Monday/i.test(msg)) {
+      return `Weekly documents always cover Monday to Sunday. Pick any day in the week ` +
+        `you want and the app will use that whole week.`;
+    }
+    if (/timeout|failed to fetch|networkerror|load failed|request failed/i.test(msg)) {
+      return `The server did not answer, so the app could not ${what}.\n\n` +
+        `The server falls asleep when nobody has used it for a while and takes ` +
+        `up to a minute to wake up. Wait a moment and try again. Nothing has been lost.`;
+    }
+    // Anything else: show what the server said, but still say what to do.
+    return `Could not ${what}.\n\n${msg}\n\nIf it happens again, wait a minute and try once more.`;
+  }
+
+  // A failure the staff must acknowledge. Native alert on purpose: on an iPad
+  // it is unmissable and needs no styling.
+  function sorry(err, doing) {
+    alert(explain(err, doing));
+  }
+
   // ------------------------------------------------------------ login cache
   // The cookie is the real session; this cache lets the UI show who is
   // logged in and stamp receptionist ids on offline-captured records.
@@ -136,7 +212,20 @@
   }
 
   async function login(username, password) {
-    const out = await api('/api/auth/login', { method: 'POST', body: { username, password } });
+    let out;
+    try {
+      out = await api('/api/auth/login', { method: 'POST', body: { username, password } });
+    } catch (e) {
+      // A 401 HERE means the name or password was wrong — not that a session
+      // expired, which is what a 401 means everywhere else. Without this the
+      // sign-in screen tells people they have been signed out.
+      if (e.unauthorized) {
+        const bad = new Error('invalid credentials');
+        bad.badCredentials = true;
+        throw bad;
+      }
+      throw e;
+    }
     if (out.token) setToken(out.token); // primary auth from here on
     setCachedUser(out.user);
     return out.user;
@@ -234,6 +323,7 @@
 
   window.TB = {
     CFG, injectNav, updateNetChip, api, login, logout, me, cachedUser, setCachedUser, showWaking,
+    explain, sorry,
     SITES, deviceSite, setDeviceSite, siteLabel, refreshPrices,
     token, setToken, cachedTherapists, refreshTherapists,
   };

@@ -19,6 +19,7 @@
 
   <script src="../config.js"></script>
   <script src="../shared.js"></script>
+  <script src="../update.js"></script>
   <script src="../sync.js"></script>
   <script src="../printdoc.js"></script>
   <script src="../docfit.js"></script>
@@ -32,9 +33,7 @@
     TB.refreshPrices(); // keep this device's shared-price cache current
     TBReception.init();
     TBBackoffice.init({ managerMode: false, mount: document.getElementById('backoffice'), logoSrc: '../assets/thai_boran_logo.png' });
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('../sw.js');
-    }
+    TBUpdate.init({ swUrl: '../sw.js' });
   </script>
 </body>
 </html>

@@ -352,3 +352,50 @@
   font-variant-numeric: tabular-nums; letter-spacing: 1px;
 }
 .bo input.tomIn.bad { border-color: #b91c1c; background: #fef2f2; }
+
+/* ================= one-tap update ====================================== */
+/* Impossible to miss, but it never blocks the client in front of you:
+   the bar sits at the bottom and "Later" puts it away for a few minutes. */
+.tb-update {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 940;
+  padding: 10px; pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+.tb-update-card {
+  pointer-events: auto; max-width: 720px; margin: 0 auto;
+  background: #111827; color: #fff; border-radius: 14px;
+  padding: 14px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+  border: 2px solid #3b82f6;
+  animation: tbUpdateIn 0.25s ease-out;
+}
+@keyframes tbUpdateIn { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tb-update-card { animation: none; } }
+.tb-update-text { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; }
+.tb-update-text b { font-size: 16px; }
+.tb-update-text span { font-size: 13px; color: #cbd5e1; }
+.tb-update-actions { display: flex; gap: 8px; }
+.tb-update-actions button {
+  font: 600 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  padding: 12px 18px; border-radius: 10px; cursor: pointer; min-height: 44px;
+  background: #1f2937; color: #e5e7eb; border: 1px solid #374151;
+}
+.tb-update-actions button.go { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.tb-update-actions button:disabled { opacity: 0.6; cursor: default; }
+.tb-update-note { flex: 1 1 100%; font-size: 13px; color: #cbd5e1; }
+.tb-update-note.warn { color: #fcd34d; font-weight: 600; }
+
+/* The running version, discreet but findable — read it out over the phone. */
+.tb-version {
+  max-width: 1100px; margin: 18px auto 26px; padding: 0 14px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  color: #8a8f98;
+}
+.tb-version button {
+  font: 12px inherit; color: #4b5563; background: #f3f4f6;
+  border: 1px solid #e5e7eb; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  min-height: 32px;
+}
+.tb-version button:hover { background: #e5e7eb; }
+@media print { .tb-update, .tb-version { display: none !important; } }
