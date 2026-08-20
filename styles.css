@@ -56,3 +56,31 @@ video { width: 100%; height: auto; display: block; }
 .preview img { width: 100%; height: auto; display: block; }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; font-size: 14px; text-align: left; }
+
+/* ---- photo switch (waiver screen) --------------------------------------
+   The photo on/off control, sitting with the photo step. Styled to match
+   this page rather than the back office: same cream card, same radii. */
+.photoSwitch { margin-top: 12px; }
+.photoSwitchToggle {
+  width: 100%; text-align: left; cursor: pointer;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; min-height: 48px;
+  border: 1px solid #86efac; background: #f0fdf4; border-radius: 12px;
+  font: 600 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  color: #14532d;
+}
+.photoSwitch.warn .photoSwitchToggle { border-color: #fcd34d; background: #fffbeb; color: #78350f; }
+.photoSwitch.off .photoSwitchToggle { border-color: #fca5a5; background: #fef2f2; color: #7f1d1d; }
+.photoSwitchHint { font-weight: 400; font-size: 13px; opacity: 0.75; margin-left: auto; }
+.photoSwitchBody { display: grid; gap: 8px; margin-top: 8px; }
+.photoSwitchChoice {
+  text-align: left; cursor: pointer; padding: 12px 14px; min-height: 52px;
+  border: 1px solid #cfd5dc; background: #fff; border-radius: 12px;
+  font-family: inherit; color: #111;
+}
+.photoSwitchChoice .pcl { display: block; font-weight: 600; font-size: 15px; }
+.photoSwitchChoice .pcs { display: block; font-size: 13px; color: #666; margin-top: 2px; }
+.photoSwitchChoice.on { border-color: #111827; box-shadow: inset 0 0 0 2px #111827; }
+.photoSwitchChoice:focus-visible, .photoSwitchToggle:focus-visible {
+  outline: 2px solid #3b82f6; outline-offset: 2px;
+}

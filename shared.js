@@ -30,6 +30,9 @@
       .map((t) => `<a href="${t.href}" class="tb-tab${t.id === active ? " active" : ""}${t.quiet ? " quiet" : ""}">${t.label}</a>`)
       .join("") + `<span id="tbNetChip" class="tb-chip">...</span>`;
     document.body.insertBefore(bar, document.body.firstChild);
+    // The back-office pages get the app canvas behind them; the waiver
+    // page keeps its own cream background.
+    if (document.querySelector('.bo')) document.body.classList.add('tb-app');
     updateNetChip();
     window.addEventListener('online', updateNetChip);
     window.addEventListener('offline', updateNetChip);

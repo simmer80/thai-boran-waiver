@@ -14,7 +14,7 @@
 // Nothing here ever touches IndexedDB, so captured waivers and anything not
 // yet synced survive an update untouched — only the cached app files change.
 
-const BUILD = '2026.08.20-04';
+const BUILD = '2026.08.20-05';
 const CACHE_NAME = 'thai-boran-waiver-' + BUILD;
 
 // The app cannot work offline without these, so a failure to cache them
@@ -90,30 +90,66 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// How requests are answered.
+//
+// PAGES are network-first: if the iPad has WiFi it always gets the current
+// screen, so a stale shell can never survive a launch. This is what went
+// wrong before — everything was cache-first, so an old page could be served
+// for as long as its worker stayed put, and reinstalling did not obviously
+// help. Offline it falls straight back to the cached copy, so the waiver
+// form keeps working with no connection.
+//
+// EVERYTHING ELSE is stale-while-revalidate: answered instantly from cache,
+// refreshed in the background. Fast to launch, and never more than one
+// launch behind even if the worker itself is somehow stuck.
+const NAV_TIMEOUT_MS = 3000;
+
+async function networkFirst(req, cache) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NAV_TIMEOUT_MS);
+  try {
+    const fresh = await fetch(req, { signal: controller.signal });
+    clearTimeout(timer);
+    if (fresh && fresh.ok) cache.put(req, fresh.clone());
+    return fresh;
+  } catch (_) {
+    clearTimeout(timer);
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    // A page never visited, with no connection: the app shell is the
+    // closest useful answer.
+    return (await cache.match('./index.html')) || Response.error();
+  }
+}
+
+async function staleWhileRevalidate(req, cache) {
+  const cached = await cache.match(req);
+  const network = fetch(req).then((resp) => {
+    if (resp && resp.ok) cache.put(req, resp.clone());
+    return resp;
+  }).catch(() => null);
+  return cached || (await network) || Response.error();
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
   // Never intercept API traffic: the back office is online-first and must
   // see live data (and real failures) — not stale cached responses.
   if (url.pathname.startsWith('/api/') || url.pathname.includes('/api/')) return;
-
+  // Nor anything on another host.
+  if (url.origin !== self.location.origin) return;
   // The worker script itself must always come from the network, or a new
   // build could never be discovered.
   if (url.pathname.endsWith('/sw.js')) return;
 
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((resp) => {
-        try {
-          if (url.origin === self.location.origin && req.method === 'GET') {
-            const copy = resp.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          }
-        } catch (_) {}
-        return resp;
-      }).catch(() => cached);
-    })
-  );
+  const isPage = req.mode === 'navigate' ||
+    (req.headers.get('accept') || '').includes('text/html');
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    return isPage ? networkFirst(req, cache) : staleWhileRevalidate(req, cache);
+  })());
 });

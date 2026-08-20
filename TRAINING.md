@@ -38,9 +38,9 @@ The app tells you if something is missing and what to do about it. For
 example, if the client has not signed yet it says so and asks you to have
 them sign before pressing Save again.
 
-**If a client does not want their photo taken**, you can turn the photo off:
-**Front desk** tab → **This device** → **Client photo**. There are three
-choices:
+**If a client does not want their photo taken**, the switch is right there on
+the waiver screen, by the photo step. Tap the green bar that says **Photos
+ON**, then tap what you want. Three choices:
 
 - **Photograph every client** — normal.
 - **Skip the next client only** — this one client, then it goes back to
@@ -48,8 +48,9 @@ choices:
 - **Stop photographing until I say so** — stays off, even if the iPad is
   restarted, until you turn it back on.
 
-Whichever is chosen is written at the top of the box in large letters, so you
-can always see which one is on.
+Whichever is chosen is written on the bar itself, so you can always see which
+one is on without opening anything. The same switch is also in **Front desk →
+This device → Client photo** if you prefer to set it there.
 
 ### 2. Check today's sessions
 
@@ -254,12 +255,39 @@ The message says what is wrong. The usual ones:
 It does not — it is scaled to fit. Use the **−**, **+** and **Fit width**
 buttons above it to zoom, and drag sideways when zoomed in.
 
+## The app looks like the old version
+
+If a screen looks like it did before an update — the wrong layout, a button
+that should be there is missing — the iPad is holding on to old files.
+
+**Do this, in order. Stop as soon as it looks right.**
+
+1. **Close the app properly and open it again.** Swipe up from the bottom of
+   the iPad, flick the Thai Boran app card away, then tap the icon again.
+   This alone fixes it almost every time.
+2. **Scroll to the bottom of any screen and tap "Check for updates".** If a
+   new version is waiting, the blue bar appears — tap **Update now**.
+3. **Tap "Reinstall app files"** (next to it at the bottom of the screen).
+   Say yes. The app fetches a fresh copy from the server and opens again.
+
+> **Waivers on the iPad are not touched by any of these.** Reinstalling app
+> files replaces the app, not your records.
+
+Only if all three fail: tell Alberto the version number shown at the top
+right of the screen. **Do not delete the app icon** — that is no longer the
+fix, and if any waivers have not been sent yet it is the one thing that can
+lose them.
+
 ## Which version is this iPad on?
 
-Scroll to the bottom of any screen. It says:
+Two places, whichever is easier:
+
+- **Top right of the screen**, always visible, next to Online/Offline:
+  a small `v2026.08.20-05`.
+- **Bottom of any screen**, with the buttons:
 
 ```
-Thai Boran app · version 2026.08.20-03      [ Check for updates ]
+Thai Boran app · version 2026.08.20-05   [ Check for updates ]  [ Reinstall app files ]
 ```
 
 Read that number out if you are asked on the phone. **Check for updates**

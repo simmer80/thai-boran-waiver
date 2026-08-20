@@ -205,6 +205,19 @@ Monday to Friday &amp; Holidays
 />
       </div>
 
+      <!-- The photo switch, where the photo is actually taken. It used to
+           be two tabs and a login away, which is no good for something
+           used many times a day when a client says no. Closed it shows the
+           state; open it is one tap per choice. -->
+      <div id="photoSwitch" class="photoSwitch">
+        <button type="button" id="photoSwitchToggle" class="photoSwitchToggle"
+          aria-expanded="false" aria-controls="photoSwitchBody">
+          <span id="photoSwitchState">Photos ON</span>
+          <span class="photoSwitchHint">tap to change</span>
+        </button>
+        <div id="photoSwitchBody" class="photoSwitchBody hidden"></div>
+      </div>
+
       <div class="row" style="margin-top:12px; gap: 16px;">
         <div class="preview hidden" id="photoPreviewBox"><img id="photoPreview" alt="Photo preview" /></div>
         <div id="photoStatus" class="small">No photo taken yet</div>

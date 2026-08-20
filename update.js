@@ -83,7 +83,32 @@
     });
   }
 
+  // The footer sits at the bottom of the page — on the waiver form that is
+  // two screens down, which is no use to someone being asked over the phone
+  // which version an iPad is on. So the build also rides in the top bar,
+  // which is sticky and on every screen.
+  function renderNavChip() {
+    const bar = document.querySelector('.tb-nav');
+    if (!bar) return;
+    let chip = document.getElementById('tbNavVersion');
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.id = 'tbNavVersion';
+      chip.type = 'button';
+      chip.className = 'tb-navversion';
+      chip.title = 'App version — tap for update options';
+      chip.addEventListener('click', () => {
+        const f = document.getElementById('tbVersion');
+        if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        check({ manual: true });
+      });
+      bar.appendChild(chip);
+    }
+    chip.textContent = version ? 'v' + version : 'v—';
+  }
+
   function renderFooter() {
+    renderNavChip();
     let el = document.getElementById('tbVersion');
     if (!el) {
       el = document.createElement('div');
@@ -94,7 +119,9 @@
     el.innerHTML = `
       <span>Thai Boran app · version <b id="tbVersionNo">${esc(version || 'not installed')}</b></span>
       <button type="button" id="tbCheckNow">Check for updates</button>
+      <button type="button" id="tbReinstall">Reinstall app files</button>
       <span id="tbCheckMsg"></span>`;
+    document.getElementById('tbReinstall').addEventListener('click', reinstall);
     document.getElementById('tbCheckNow').addEventListener('click', async () => {
       const msg = document.getElementById('tbCheckMsg');
       msg.textContent = 'Checking…';
@@ -103,6 +130,46 @@
       else msg.textContent = 'This iPad is up to date.';
       setTimeout(() => { if (msg.textContent === 'This iPad is up to date.') msg.textContent = ''; }, 6000);
     });
+  }
+
+  // The escape hatch for a device that is somehow stuck on old files: throw
+  // away every cached copy and the worker itself, then reload from the
+  // server. It is what "delete the icon and reinstall" used to achieve,
+  // without deleting anything — and it CANNOT touch the waivers, which live
+  // in IndexedDB and are not caches.
+  async function reinstall() {
+    const btn = document.getElementById('tbReinstall');
+    const msg = document.getElementById('tbCheckMsg');
+    const stop = blockers();
+    if (stop.length) {
+      if (msg) { msg.className = 'warn'; msg.textContent = 'Finish this first: ' + stop.join('; ') + '.'; }
+      return;
+    }
+    const ask = [
+      'Get a fresh copy of the app from the server?',
+      '',
+      'The app closes and opens again. Waivers saved on this iPad are NOT affected.',
+    ].join(String.fromCharCode(10));
+    if (!confirm(ask)) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Reinstalling…'; }
+    try {
+      if (window.TBSync && TBSync.pendingCount) {
+        const pending = await TBSync.pendingCount();
+        if (pending > 0 && navigator.onLine) {
+          await Promise.race([TBSync.syncNow(), new Promise((r) => setTimeout(r, 8000))]);
+        }
+      }
+    } catch (_) { /* the records stay on the iPad regardless */ }
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    } catch (_) { /* keep going: the reload is the point */ }
+    reloading = true;
+    // A cache-busting reload, so even the browser's own copy of the page is
+    // bypassed on the way back in.
+    location.replace(location.pathname + '?fresh=' + Date.now());
   }
 
   // --------------------------------------------------------------- the bar

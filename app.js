@@ -88,6 +88,89 @@ function updateSettingsUi() {
   }
 
   updatePhotoModeBanner();
+  if (typeof renderPhotoSwitch === "function") renderPhotoSwitch();
+}
+
+
+// ---------------------------------------------------------- photo switch
+// The same three states as the Front desk panel, on the waiver screen where
+// the photo is actually taken. A client says "no photo" while standing at
+// the counter; getting to a settings tab and signing in to answer that is
+// not workable, so it is two taps here: open, choose.
+//
+// It writes the same two localStorage keys the Front desk panel reads, so
+// the two are always showing the same thing.
+const PHOTO_CHOICES = [
+  { id: 'on', label: 'Photograph every client', sub: 'The normal setting' },
+  { id: 'skipNext', label: 'Skip the next client only', sub: 'Then back to normal by itself' },
+  { id: 'off', label: 'Stop until I turn it back on', sub: 'Stays off after a restart' },
+];
+
+function photoSwitchState() {
+  if (isPhotoPermanentlyDisabled()) return 'off';
+  if (!isPhotoOneOffEnabled()) return 'skipNext';
+  return 'on';
+}
+
+function photoSwitchLabel(state) {
+  if (state === 'off') return 'Photos OFF';
+  if (state === 'skipNext') return 'Skipping the next client';
+  return 'Photos ON';
+}
+
+function setPhotoSwitch(next) {
+  if (next === 'on') {
+    setPhotoCaptureEnabled(true);
+    setPhotoPermanentlyDisabled(false);
+  } else if (next === 'skipNext') {
+    setPhotoCaptureEnabled(false);
+    setPhotoPermanentlyDisabled(false);
+  } else {
+    // Turning photos off for everyone is the one choice worth confirming —
+    // the iPad is often in a client's hands on this screen.
+    if (!confirm('Stop photographing every client until you turn it back on?')) return;
+    setPhotoPermanentlyDisabled(true);
+  }
+  renderPhotoSwitch();
+  applyPhotoGate();
+  updateSettingsUi();
+}
+
+function renderPhotoSwitch(open) {
+  const wrap = el('photoSwitch');
+  const toggle = el('photoSwitchToggle');
+  const body = el('photoSwitchBody');
+  const label = el('photoSwitchState');
+  if (!wrap || !toggle || !body || !label) return;
+
+  const state = photoSwitchState();
+  label.textContent = photoSwitchLabel(state);
+  wrap.classList.toggle('warn', state === 'skipNext');
+  wrap.classList.toggle('off', state === 'off');
+
+  const isOpen = open === undefined ? !body.classList.contains('hidden') : open;
+  body.classList.toggle('hidden', !isOpen);
+  toggle.setAttribute('aria-expanded', String(isOpen));
+  if (!isOpen) return;
+
+  body.innerHTML = PHOTO_CHOICES.map((c) =>
+    '<button type="button" class="photoSwitchChoice' + (c.id === state ? ' on' : '') + '" data-choice="' + c.id + '">' +
+      '<span class="pcl">' + c.label + '</span>' +
+      '<span class="pcs">' + c.sub + '</span>' +
+    '</button>').join('');
+  body.querySelectorAll('[data-choice]').forEach((b) => {
+    b.addEventListener('click', () => setPhotoSwitch(b.dataset.choice));
+  });
+}
+
+function setupPhotoSwitch() {
+  const toggle = el('photoSwitchToggle');
+  if (!toggle) return;
+  toggle.addEventListener('click', () => {
+    const body = el('photoSwitchBody');
+    renderPhotoSwitch(body.classList.contains('hidden'));
+  });
+  renderPhotoSwitch(false);
 }
 
 // Banner on the main form so the receptionist always sees the active mode.
@@ -1323,6 +1406,7 @@ async function init() {
   setupTherapistPicker();
   setupAddons();
   setupSignature();
+  setupPhotoSwitch();
   setupEvents();
   // Prevent iPad edge-swipe navigation (back/forward) while keeping vertical scroll
 let touchStartX = 0;
