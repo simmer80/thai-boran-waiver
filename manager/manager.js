@@ -978,6 +978,10 @@ async function exportZipAll() {
 
 function setupOfflineHint() {
   const hint = el("offlineHint");
+  // Not every page that loads this script carries the hint. Without this
+  // guard init() threw here and everything after it — including the login
+  // unlock — never ran.
+  if (!hint) return;
   function refresh() {
     const online = navigator.onLine;
     hint.classList.toggle("hidden", online);
@@ -1033,10 +1037,13 @@ function init() {
   // Primary unlock: a server-verified manager login from the back office.
   document.addEventListener("tb:authed", (e) => {
     const role = e.detail && e.detail.role;
-    if (role === "manager" || role === "admin") {
-      serverAuthed = true;
-      unlockLocal();
-    }
+    const boss = role === "manager" || role === "admin";
+    if (boss) serverAuthed = true;
+    // Anyone signed in may look at what this iPad captured — she took
+    // these waivers. Erasing them all stays with the manager.
+    unlockLocal();
+    const clear = el("btnClearAll");
+    if (clear) clear.style.setProperty("display", boss ? "" : "none", "important");
   });
 
   // A receptionist signed in on the Manager tab: the back office shows the

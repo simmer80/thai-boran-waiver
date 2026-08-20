@@ -410,6 +410,10 @@
   async function init() {
     state.user = await TB.me();
     if (state.user) {
+      // The device tools on this page unlock off a verified login, exactly as
+      // they do in the back office. Without this they sat behind a device PIN
+      // that nobody at the front desk has ever been given.
+      document.dispatchEvent(new CustomEvent('tb:authed', { detail: { ...state.user } }));
       state.site = TB.deviceSite() || 'panacan';
       // Sales and client records are on this screen: lock it when idle.
       TBIdleLock.start({ waiverUrl: '../index.html' });
