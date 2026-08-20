@@ -324,15 +324,30 @@ function parseAddonsList(text) {
   return t.split(/[;,]/).map(s => s.trim()).filter(Boolean);
 }
 
-// SENIOR/PWD — the two rules, mirrored from the server (src/pricing.js).
-// Both look like bugs and are not; a parity test compares this function
-// against the server’s over every combination, so they cannot drift.
+// THE MONEY RULES, mirrored from the server (src/pricing.js). All three look
+// like bugs and are not. A parity test runs this file’s pricing against the
+// server’s over every combination, so the two cannot drift.
 //
 // 1. NO VAT DIVISOR — Thai Boran is not VAT-registered (percentage tax),
-//    so the 20% is taken on the price as charged.
+//    so the 20% is taken on the price as charged, never on gross ÷ 1.12.
+//
 // 2. Only the eligible SERVICE is discounted: never a Combo, and never an
 //    add-on, whether chosen at the start or added mid-service. Which
 //    services qualify comes from the price list, not from this file.
+//
+// 3. THE COMMISSION BASIS IS GROSS, WHILE THE SALE TOTAL IS NET.
+//    This file does not compute commission — the server does, in
+//    commissionFor() — but the rule is recorded here because this is where
+//    someone comes to understand the pricing, and the asymmetry is the most
+//    likely thing to be “corrected” by mistake.
+//
+//    A Senior/PWD discount is the BUSINESS’S cost, not the therapist’s: she
+//    did the same work and is paid the same. A 730 sale discounted to 630
+//    pays a 0.35 therapist 255.50 (on the 730), not 220.50.
+//
+//    So a day’s takings are the sum of NET while a day’s commission is on
+//    GROSS. They coincide on every undiscounted sale, which is exactly why a
+//    mistake here would go unnoticed.
 function isSeniorEligibleService(set, serviceName) {
   const map = set && set.seniorEligible;
   if (!map || typeof map !== 'object') return true;      // set predates the flag
