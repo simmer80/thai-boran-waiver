@@ -37,9 +37,11 @@
       el.innerHTML = `
         <div class="idleCard">
           <h2>Still there?</h2>
-          <p>This screen shows sales and client records, so it locks itself
-             when it is left alone. Signing out in <b><span id="tbIdleSecs">0</span></b> seconds.</p>
-          <button type="button" class="btn primary" id="tbIdleStay">Keep me signed in</button>
+          <p>This screen shows sales and client records, so it signs itself out
+             when it is left alone — the app goes back to the Waiver Form.
+             <b>Nothing is lost.</b></p>
+          <p class="idleCount">Signing out in <b><span id="tbIdleSecs">0</span></b> <span id="tbIdleUnit">seconds</span>.</p>
+          <button type="button" class="btn primary" id="tbIdleStay">I’m still here — keep me signed in</button>
         </div>`;
       document.body.appendChild(el);
       el.querySelector('#tbIdleStay').addEventListener('click', () => reset());
@@ -79,8 +81,11 @@
     if (left <= cfg.warnSeconds * 1000) {
       warned = true;
       const el = panel();
+      const n = Math.ceil(left / 1000);
       const secs = el.querySelector('#tbIdleSecs');
-      if (secs) secs.textContent = String(Math.ceil(left / 1000));
+      const unit = el.querySelector('#tbIdleUnit');
+      if (secs) secs.textContent = String(n);
+      if (unit) unit.textContent = n === 1 ? 'second' : 'seconds';
     } else if (warned) {
       hideWarning();
     }

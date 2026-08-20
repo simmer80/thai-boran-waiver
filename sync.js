@@ -132,7 +132,7 @@
     } finally {
       syncing = false;
       await refreshChip();
-      if (lastResult === 'not logged in') setChip('Sign in (Receptionist tab) to sync', 'warn');
+      if (lastResult === 'not logged in') setChip('Sign in (Front desk tab) to sync', 'warn');
     }
   }
 

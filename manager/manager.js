@@ -1029,7 +1029,8 @@ function unlockIfPinOk(pin) {
 // Set once a MANAGER's server login has been verified on this page load.
 // The local section then unlocks (and re-unlocks after a walk-away lock)
 // without the PIN; the PIN remains only as the offline fallback.
-let serverAuthed = false;
+let serverAuthed = false;   // a MANAGER is signed in (destructive tools)
+let loginUnlocked = false;  // ANY verified login (the tools are visible)
 
 function init() {
   setupOfflineHint();
@@ -1039,6 +1040,7 @@ function init() {
     const role = e.detail && e.detail.role;
     const boss = role === "manager" || role === "admin";
     if (boss) serverAuthed = true;
+    loginUnlocked = true;
     // Anyone signed in may look at what this iPad captured — she took
     // these waivers. Erasing them all stays with the manager.
     unlockLocal();
@@ -1050,6 +1052,7 @@ function init() {
   // wrong-role screen, and these local sections (client photos, medical
   // notes, sales history) must not be sitting under it offering a PIN.
   document.addEventListener("tb:denied", () => {
+    loginUnlocked = false;
     forceLock();
     hideBlock("pinCard");
     hideBlock("mgrCard");
@@ -1063,12 +1066,12 @@ function init() {
 
   window.addEventListener("pageshow", () => {
     forceLock();
-    if (serverAuthed) unlockLocal(); // still the same verified manager session
+    if (loginUnlocked) unlockLocal(); // still the same verified session
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") forceLock();
-    else if (serverAuthed) unlockLocal();
+    else if (loginUnlocked) unlockLocal();
   });
 
       // Always start locked

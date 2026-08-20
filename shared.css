@@ -163,19 +163,27 @@ body.tb-app { background: var(--canvas); }
   min-height: 48px;
   border: 1px solid #cdd4dd;
   border-radius: var(--r-sm);
-  background: var(--paper);
+  background-color: var(--paper);
   color: var(--ink);
   -webkit-appearance: none;
   appearance: none;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
+/* The chevron is drawn with two gradients. Every one of these longhands
+   matters: a later `background:` SHORTHAND anywhere would reset position,
+   size and repeat, and the arrows would tile from the top-left as a grey box
+   full of black triangles — which is exactly what happened on the parlor
+   pickers. Variants below therefore set background-COLOR, never background. */
 .bo select {
+  --arrow: var(--ink-3);
   padding-right: var(--s6);
-  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
-                    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
-  background-position: calc(100% - 18px) calc(50% + 2px), calc(100% - 13px) calc(50% + 2px);
+  background-color: var(--paper);
+  background-image: linear-gradient(45deg, transparent 50%, var(--arrow) 50%),
+                    linear-gradient(135deg, var(--arrow) 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% + 1px), calc(100% - 13px) calc(50% + 1px);
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
+  cursor: pointer;
 }
 .bo input:hover, .bo select:hover { border-color: #b6bfcb; }
 .bo input:focus, .bo select:focus {
@@ -290,9 +298,12 @@ body.tb-app { background: var(--canvas); }
 .boSite { display: flex; align-items: center; gap: var(--s2); }
 .boSite label { color: #98a3b0; margin: 0; font-size: var(--f-xs); }
 .boSite select {
-  background: #262b32; border-color: #3a424c; color: #f2f5f8; min-height: 44px;
-  background-image: linear-gradient(45deg, transparent 50%, #98a3b0 50%),
-                    linear-gradient(135deg, #98a3b0 50%, transparent 50%);
+  --arrow: #98a3b0;
+  background-color: #262b32;
+  border-color: #3a424c;
+  color: #f2f5f8;
+  min-height: 44px;
+  font-weight: 600;
 }
 .boSite select:hover { border-color: #4c5661; }
 .boBarActions { margin-left: auto; display: flex; gap: var(--s2); flex-wrap: wrap; }
@@ -642,3 +653,59 @@ body.tb-app { background: var(--canvas); }
 .tb-version button:disabled { opacity: 0.5; cursor: default; }
 .tb-version .warn { color: #9a6200; font-weight: 600; }
 @media print { .tb-update, .tb-version { display: none !important; } }
+
+/* ---- admin accordion --------------------------------------------------- */
+/* Titles always visible, one tap to open, chevron says which way it goes. */
+.acc { display: flex; flex-direction: column; gap: var(--s2); }
+.accItem { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); overflow: hidden; }
+.accItem.open { border-color: #cdd4dd; box-shadow: var(--shadow); }
+.accHead {
+  width: 100%; display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s4); min-height: 64px; cursor: pointer;
+  background: var(--paper); border: 0; font-family: inherit; color: inherit; text-align: left;
+  transition: background 0.12s ease;
+}
+.accHead:hover { background: var(--paper-2); }
+.accHead:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--brand-wash); }
+.accChevron {
+  flex: 0 0 auto; width: 12px; height: 12px;
+  border-right: 2.5px solid var(--ink-3); border-bottom: 2.5px solid var(--ink-3);
+  transform: rotate(-45deg); transform-origin: 60% 60%;
+  transition: transform 0.18s ease; margin-left: 2px;
+}
+.accItem.open .accChevron { transform: rotate(45deg); border-color: var(--brand); }
+.accTitles { display: flex; flex-direction: column; }
+.accTitle { font-weight: 650; font-size: var(--f-md); }
+.accSub { font-size: var(--f-xs); color: var(--ink-3); margin-top: 1px; }
+.accBody { padding: 0 var(--s4) var(--s4); border-top: 1px solid var(--line-2); }
+.accBody > *:first-child { margin-top: var(--s4); }
+@media (prefers-reduced-motion: reduce) { .accChevron { transition: none; } }
+
+/* ---- sales chart ------------------------------------------------------- */
+.chartBox {
+  margin-top: var(--s4); padding: var(--s4);
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper-2);
+}
+.chartTitle {
+  font-size: var(--f-xs); font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: var(--s2);
+}
+.chartBox canvas { width: 100%; display: block; }
+
+/* ---- one waiver, opened ------------------------------------------------ */
+.waiverDetail { display: grid; gap: var(--s5); grid-template-columns: 1fr; margin-top: var(--s4); }
+@media (min-width: 860px) { .waiverDetail { grid-template-columns: 1fr 1fr; } }
+.kvTable { width: 100%; border-collapse: collapse; font-size: var(--f-sm); }
+.kvTable td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line-2); }
+.kvTable td:first-child { width: 40%; }
+.waiverImages { display: grid; gap: var(--s4); align-content: start; }
+.waiverImages figure { margin: 0; }
+.waiverImages figcaption {
+  font-size: var(--f-xs); font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.02em; color: var(--ink-3); margin-bottom: var(--s2);
+}
+.waiverImages img {
+  width: 100%; max-height: 340px; object-fit: contain;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.idleCount { font-variant-numeric: tabular-nums; }

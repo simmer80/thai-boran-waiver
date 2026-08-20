@@ -42,7 +42,12 @@ textarea { min-height: 72px; }
 .sig-wrap { border: 1px solid #cfd5dc; border-radius: 12px; overflow: hidden; background: #fff; }
 .sig-canvas { width: 100%; height: 220px; touch-action: none; display: block; }
 .notice { padding: 10px 12px; border-radius: 10px; background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; }
-.hidden { display: none; }
+/* A utility class must WIN. This had no !important, so any component that
+   set its own display later in the cascade beat it at equal specificity —
+   .photoSwitchBody{display:grid} did exactly that, which is why the photo
+   menu on the waiver screen could not be closed at all. Anything given
+   class="hidden" is hidden, full stop. */
+.hidden { display: none !important; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 999; }
 .modal.show { display: flex; }
 .modal-card { background: #fff; width: min(920px, 100%); border-radius: 14px; overflow: hidden; }
@@ -84,3 +89,10 @@ video { width: 100%; height: auto; display: block; }
 .photoSwitchChoice:focus-visible, .photoSwitchToggle:focus-visible {
   outline: 2px solid #3b82f6; outline-offset: 2px;
 }
+
+/* A moment of confirmation after choosing, so the tap is never ambiguous. */
+.photoSwitch.justSet .photoSwitchToggle {
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.28);
+  transition: box-shadow 0.2s ease;
+}
+.photoSwitchHint { transition: opacity 0.15s ease; }

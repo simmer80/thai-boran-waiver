@@ -34,6 +34,7 @@
     editMode: false,     // editing the values IN the document template
     section: '',         // which step of the role's workflow is on screen
     tom: null,           // service -> TOM code, straight from the org config
+    adminOpen: {},       // which admin sections the manager left open
 
     liveSubSigUrl: '', liveSubSigKey: undefined,
     sessions: [], editingId: null,
@@ -114,11 +115,11 @@
           all live here.
         </p>
         <p class="muted" style="font-size:14px;">
-          Everything you need is in the <b>Receptionist</b> tab: waivers,
+          Everything you need is in the <b>Front desk</b> tab: waivers,
           sessions and sales, the documents, and the approved copies.
         </p>
         <div class="row" style="justify-content:center;margin-top:12px;">
-          <a class="btn primary" href="../reception/">Go to the Receptionist tab</a>
+          <a class="btn primary" href="../reception/">Go to the Front desk tab</a>
           <button id="boSwitch" class="btn">Sign out / switch account</button>
         </div>
       </div>`;
@@ -249,7 +250,7 @@
     reception: [
       { id: 'today', label: 'Today', sub: 'Check and correct the day' },
       { id: 'documents', label: 'Documents', sub: 'Create, sign, submit' },
-      { id: 'device', label: 'This device', sub: 'Photo and local records' },
+      { id: 'device', label: 'This device', sub: 'Waivers stored on this iPad' },
     ],
     manager: [
       { id: 'approve', label: 'To approve', sub: 'Waiting for you' },
@@ -282,7 +283,6 @@
             : siteBadge(state.site, true)}
         </div>
         <div class="boBarActions">
-          <a class="btn" href="../records/">Sales &amp; history</a>
           <button id="boChangePw" class="btn">Password</button>
           <button id="boLogout" class="btn">Sign out</button>
         </div>
@@ -461,26 +461,60 @@
   }
 
   // -------------------------------------------------------------- admin
+  // ACCORDION, not sub-tabs. These five sections are wildly different heights
+  // — Prices is a long scrolling list, the Drive panel is two lines — and a
+  // manager arriving here needs to SEE what is available before choosing. An
+  // accordion keeps every title on screen, opens with one tap, and allows two
+  // open at once when comparing. Sub-tabs would hide the titles behind small
+  // targets and stack a second row of navigation under the one above it.
+  const ADMIN_SECTIONS = [
+    { id: 'prices', title: 'Prices', sub: 'Shared — both parlors charge the same', body: '<div id="pricesBody" class="muted">Loading…</div>', load: () => renderPricesAdmin() },
+    { id: 'tom', title: 'TOM codes', sub: 'The short code on the Main Office Daily Sales Report', body: '<div id="tomBody" class="muted">Loading…</div>', load: () => renderTomCodes() },
+    { id: 'therapists', title: 'Therapists', sub: 'Shared — staff rotate between parlors', body: '<div id="thBody"></div>', load: () => renderTherapists() },
+    { id: 'users', title: 'Users & passwords', sub: 'Reset a receptionist’s password', body: '<div id="usersBody"></div>', load: () => renderUsersAdmin() },
+    { id: 'drive', title: 'Google Drive mirror', sub: 'Whether approved copies are reaching Drive', body: '<div id="driveBody" class="muted">Loading…</div>', load: () => loadDrive() },
+  ];
+
   function renderAdminSection(host) {
     host.innerHTML = `
-      <div class="panel noprint"><h2 style="margin-top:0">Prices
-        <span class="muted" style="font-size:12px;">(shared — both parlors charge the same)</span></h2>
-        <div id="pricesBody" class="muted">Loading…</div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">TOM codes
-        <span class="muted" style="font-size:12px;">(the short code on the Main Office Daily Sales Report)</span></h2>
-        <div id="tomBody" class="muted">Loading…</div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">Therapists
-        <span class="muted" style="font-size:12px;">(shared — staff rotate between parlors)</span></h2>
-        <div id="thBody"></div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">Users &amp; passwords</h2>
-        <div id="usersBody"></div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">Google Drive mirror</h2>
-        <div id="driveBody" class="muted">Loading…</div></div>`;
-    renderPricesAdmin();
-    renderTomCodes();
-    renderTherapists();
-    renderUsersAdmin();
-    loadDrive();
+      <div class="panel noprint">
+        <div class="secHead">
+          <h2>Admin</h2>
+          <div class="muted">Tap a heading to open it. Everything here is shared by both parlors.</div>
+        </div>
+        <div class="acc">
+          ${ADMIN_SECTIONS.map((sec) => `
+            <section class="accItem" data-acc="${sec.id}">
+              <button type="button" class="accHead" aria-expanded="false" aria-controls="acc-${sec.id}">
+                <span class="accChevron" aria-hidden="true"></span>
+                <span class="accTitles">
+                  <span class="accTitle">${esc(sec.title)}</span>
+                  <span class="accSub">${esc(sec.sub)}</span>
+                </span>
+              </button>
+              <div class="accBody" id="acc-${sec.id}" hidden>${sec.body}</div>
+            </section>`).join('')}
+        </div>
+      </div>`;
+
+    host.querySelectorAll('.accItem').forEach((item) => {
+      const id = item.dataset.acc;
+      const head = item.querySelector('.accHead');
+      const body = item.querySelector('.accBody');
+      const sec = ADMIN_SECTIONS.find((x) => x.id === id);
+      head.addEventListener('click', () => {
+        const open = item.classList.toggle('open');
+        head.setAttribute('aria-expanded', String(open));
+        body.hidden = !open;
+        state.adminOpen[id] = open;
+        // Loaded the first time it is opened, not all five at once.
+        if (open && !item.dataset.loaded) {
+          item.dataset.loaded = '1';
+          sec.load();
+        }
+      });
+      if (state.adminOpen[id]) head.click();     // keep it open across renders
+    });
   }
 
   // ------------------------------------------------------------ TOM codes
@@ -630,24 +664,28 @@
   // does on this iPad, and the records this iPad captured.
   function renderDeviceSection(host) {
     host.innerHTML = `
-      <div class="panel" id="devicePhoto">
-        <div class="secHead">
-          <h2>Client photo</h2>
-          <div class="muted">Controls the photo step on the Waiver Form tab of this iPad.</div>
-        </div>
-        <div id="photoBox"></div>
-      </div>
       <div class="panel" id="deviceRecords">
         <div class="secHead">
-          <h2>Local records on this iPad</h2>
-          <div class="muted">Waivers captured here. You can add add-ons a client asked
-            for mid-session; the price, the hours and the day’s totals follow automatically.</div>
+          <h2>Waivers captured on this iPad</h2>
+          <div class="muted">The waiver forms this iPad took, with their photo and
+            signature. Open one to correct it — add an add-on the client asked for
+            mid-session and the price, the hours and the day’s totals follow
+            automatically.</div>
         </div>
-        <div id="localPanels"></div>
-        <div class="row" style="margin-top:8px;">
-          <button id="btnEditRecords" class="btn primary">Show local records</button>
+        <div class="row">
+          <button id="btnEditRecords" class="btn primary" aria-expanded="false">Show the list</button>
           <span id="localMsg" class="muted" role="status"></span>
         </div>
+        <div id="localPanels" style="margin-top:12px;"></div>
+      </div>
+      <div class="panel">
+        <div class="secHead">
+          <h2>Client photo</h2>
+          <div class="muted">The photo switch is on the <b>Waiver Form</b> tab, beside the
+            photo step — that is where it is needed when a client says no. Tap the coloured
+            bar there to change it.</div>
+        </div>
+        <a class="btn" href="../index.html">Go to the Waiver Form</a>
       </div>`;
     document.dispatchEvent(new CustomEvent('tb:device-section', { detail: {} }));
   }

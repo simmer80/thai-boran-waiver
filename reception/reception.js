@@ -1,12 +1,10 @@
-// Front desk — the two device-local things, kept clearly apart:
+// Front desk — the waivers this iPad captured, where add-ons a client asked
+// for mid-session are added afterwards.
 //
-//   Client photo    what the Waiver Form tab does on THIS iPad. Three states,
-//                   one tap each, and the current one is always on screen.
-//   Local records   the waivers this iPad captured, where add-ons a client
-//                   asked for mid-session are added afterwards.
-//
-// Both used to sit in one PIN-gated box called "This device (works offline)",
-// which is why nobody could find the photo switch.
+// The client-photo switch used to be here too. It moved to the Waiver Form
+// screen, beside the photo step, because that is where a client says no —
+// having it in a settings tab behind a login meant it was never used. There
+// is exactly one copy of it now; this file no longer knows about photos.
 //
 // Add-ons edited here go STRAIGHT TO THE SERVER (PATCH /api/sessions/:id),
 // which re-prices the sale and re-derives its hours. They used to be written
@@ -17,9 +15,6 @@
 'use strict';
 
 (function () {
-  const RECEPTION_PIN = '2512';
-  const PHOTO_ONE_KEY = 'tb_photo_capture_enabled';
-  const PHOTO_PERM_KEY = 'tb_photo_capture_permanent_disabled';
   const DB_NAME = 'thai_boran_waiver_db';
   const STORE = 'submissions';
 
@@ -28,75 +23,6 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  // ------------------------------------------------------------ photo flags
-  const oneOn = () => localStorage.getItem(PHOTO_ONE_KEY) !== '0';
-  const permOff = () => localStorage.getItem(PHOTO_PERM_KEY) === '1';
-
-  // Exactly one of three states is true at any moment.
-  function photoState() {
-    if (permOff()) return 'off';
-    if (!oneOn()) return 'skipNext';
-    return 'on';
-  }
-
-  const PHOTO_TEXT = {
-    on: {
-      badge: 'Photos ON', cls: 'ok',
-      says: 'Every client is photographed on the Waiver Form tab.',
-    },
-    skipNext: {
-      badge: 'Skipping the next client', cls: 'warn',
-      says: 'The next client will not be photographed. It goes back to ON by itself straight after.',
-    },
-    off: {
-      badge: 'Photos OFF', cls: 'err',
-      says: 'No client is being photographed, and it stays that way — even after the iPad restarts — until you turn it back on.',
-    },
-  };
-
-  function renderPhotoBox() {
-    const host = $('photoBox');
-    if (!host) return;
-    const st = photoState();
-    const t = PHOTO_TEXT[st];
-    host.innerHTML = `
-      <div class="photoState ${t.cls}">
-        <div class="photoBadge">${esc(t.badge)}</div>
-        <div class="photoSays">${esc(t.says)}</div>
-      </div>
-      <div class="photoChoices">
-        <button type="button" class="choice${st === 'on' ? ' on' : ''}" data-photo="on">
-          <span class="ct">Photograph every client</span>
-          <span class="cs">The normal setting</span>
-        </button>
-        <button type="button" class="choice${st === 'skipNext' ? ' on' : ''}" data-photo="skipNext">
-          <span class="ct">Skip the next client only</span>
-          <span class="cs">One client, then back to normal by itself</span>
-        </button>
-        <button type="button" class="choice${st === 'off' ? ' on' : ''}" data-photo="off">
-          <span class="ct">Stop photographing until I say so</span>
-          <span class="cs">Stays off across restarts</span>
-        </button>
-      </div>`;
-    host.querySelectorAll('[data-photo]').forEach((b) =>
-      b.addEventListener('click', () => setPhotoState(b.dataset.photo)));
-  }
-
-  function setPhotoState(next) {
-    if (next === 'on') {
-      localStorage.setItem(PHOTO_ONE_KEY, '1');
-      localStorage.setItem(PHOTO_PERM_KEY, '0');
-    } else if (next === 'skipNext') {
-      localStorage.setItem(PHOTO_ONE_KEY, '0');
-      localStorage.setItem(PHOTO_PERM_KEY, '0');
-    } else {
-      localStorage.setItem(PHOTO_PERM_KEY, '1');
-    }
-    renderPhotoBox();
-    // The Waiver Form tab reads these keys when it renders its own banner.
-    document.dispatchEvent(new CustomEvent('tb:photo-mode', { detail: { state: next } }));
-  }
 
   // -------------------------------------------- local records (add add-ons)
   function dbAll() {
@@ -219,16 +145,30 @@
   function init() {
     // The back office renders the device section; fill it when it appears.
     document.addEventListener('tb:device-section', () => {
-      renderPhotoBox();
       const b = $('btnEditRecords');
-      if (b) {
-        b.addEventListener('click', () => {
-          b.disabled = true;
-          renderRecords().finally(() => { b.disabled = false; });
-        });
-      }
+      if (!b) return;
+      // A reveal button that cannot un-reveal leaves no way back: it now
+      // says what the next tap does, and does it.
+      b.addEventListener('click', async () => {
+        const host = $('localPanels');
+        const showing = b.getAttribute('aria-expanded') === 'true';
+        if (showing) {
+          host.innerHTML = '';
+          b.setAttribute('aria-expanded', 'false');
+          b.textContent = 'Show the list';
+          return;
+        }
+        b.disabled = true;
+        try {
+          await renderRecords();
+          b.setAttribute('aria-expanded', 'true');
+          b.textContent = 'Hide the list';
+        } finally {
+          b.disabled = false;
+        }
+      });
     });
   }
 
-  window.TBReception = { init, photoState };
+  window.TBReception = { init };
 })();

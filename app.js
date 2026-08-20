@@ -63,32 +63,11 @@ function photoModeText() {
   return 'Photo capture is ON';
 }
 
+// The old on-page photo toggles were removed when the switch moved beside
+// the photo step; this now just keeps the banner and the switch in step.
 function updateSettingsUi() {
-  const one = el('btnTogglePhotoCapture');
-  const perm = el('btnTogglePhotoPermanent');
-  const status = el('photoModeStatus');
-
-  const permOff = isPhotoPermanentlyDisabled();
-  const oneOn = isPhotoOneOffEnabled();
-
-  if (one) {
-    one.textContent = oneOn ? 'This client photo: Enabled' : 'This client photo: Disabled (one-off)';
-    one.classList.toggle('toggle-on', oneOn);
-    one.classList.toggle('toggle-off', !oneOn);
-  }
-  if (perm) {
-    perm.textContent = permOff ? 'Disable photo permanently: ON' : 'Disable photo permanently: OFF';
-    perm.classList.toggle('toggle-off', permOff);   // red when permanently disabled
-    perm.classList.toggle('toggle-on', !permOff);
-  }
-  if (status) {
-    status.textContent = photoModeText();
-    status.style.color = isPhotoCaptureEnabled() ? '#0a7a2a' : '#b00020';
-    status.style.fontWeight = '700';
-  }
-
   updatePhotoModeBanner();
-  if (typeof renderPhotoSwitch === "function") renderPhotoSwitch();
+  if (typeof renderPhotoSwitch === 'function') renderPhotoSwitch();
 }
 
 
@@ -102,7 +81,7 @@ function updateSettingsUi() {
 // the two are always showing the same thing.
 const PHOTO_CHOICES = [
   { id: 'on', label: 'Photograph every client', sub: 'The normal setting' },
-  { id: 'skipNext', label: 'Skip the next client only', sub: 'Then back to normal by itself' },
+  { id: 'skipNext', label: 'Skip the photo for THIS client only', sub: 'Back to normal by itself afterwards' },
   { id: 'off', label: 'Stop until I turn it back on', sub: 'Stays off after a restart' },
 ];
 
@@ -114,7 +93,7 @@ function photoSwitchState() {
 
 function photoSwitchLabel(state) {
   if (state === 'off') return 'Photos OFF';
-  if (state === 'skipNext') return 'Skipping the next client';
+  if (state === 'skipNext') return 'Skipping the photo for this client';
   return 'Photos ON';
 }
 
@@ -131,9 +110,25 @@ function setPhotoSwitch(next) {
     if (!confirm('Stop photographing every client until you turn it back on?')) return;
     setPhotoPermanentlyDisabled(true);
   }
-  renderPhotoSwitch();
+  renderPhotoSwitch(false);      // applied — put the menu away
   applyPhotoGate();
   updateSettingsUi();
+  flashPhotoSwitch();
+}
+
+// A short "that worked" on the bar itself, so the tap is never ambiguous.
+let photoFlashTimer = 0;
+function flashPhotoSwitch() {
+  const wrap = el('photoSwitch');
+  const hint = el('photoSwitchHint');
+  if (!wrap || !hint) return;
+  wrap.classList.add('justSet');
+  hint.textContent = 'saved';
+  clearTimeout(photoFlashTimer);
+  photoFlashTimer = setTimeout(() => {
+    wrap.classList.remove('justSet');
+    hint.textContent = 'tap to change';
+  }, 1800);
 }
 
 function renderPhotoSwitch(open) {
@@ -142,6 +137,7 @@ function renderPhotoSwitch(open) {
   const body = el('photoSwitchBody');
   const label = el('photoSwitchState');
   if (!wrap || !toggle || !body || !label) return;
+  // (the hint text beside it is flashed on save; see flashPhotoSwitch)
 
   const state = photoSwitchState();
   label.textContent = photoSwitchLabel(state);

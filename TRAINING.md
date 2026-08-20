@@ -43,14 +43,15 @@ the waiver screen, by the photo step. Tap the green bar that says **Photos
 ON**, then tap what you want. Three choices:
 
 - **Photograph every client** — normal.
-- **Skip the next client only** — this one client, then it goes back to
-  normal by itself.
-- **Stop photographing until I say so** — stays off, even if the iPad is
+- **Skip the photo for THIS client only** — this one client, then it goes
+  back to normal by itself.
+- **Stop until I turn it back on** — stays off, even if the iPad is
   restarted, until you turn it back on.
 
-Whichever is chosen is written on the bar itself, so you can always see which
-one is on without opening anything. The same switch is also in **Front desk →
-This device → Client photo** if you prefer to set it there.
+Tap your choice and it takes effect straight away: the menu closes by itself,
+the bar says “saved” for a moment, and from then on the bar shows which one is
+on without you opening anything. This bar is the ONLY place the photo setting
+lives — there is nothing to find in another tab.
 
 ### 2. Check today's sessions
 

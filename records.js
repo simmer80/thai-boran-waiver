@@ -40,6 +40,7 @@
   const state = {
     user: null, site: '', tab: 'approved',
     sigUrl: '', subSigUrl: '',
+    waivers: [], localWaivers: null,
   };
 
   const siteQ = () => 'site=' + encodeURIComponent(state.site);
@@ -68,7 +69,7 @@
     { id: 'approved', label: 'Approved documents', sub: 'The signed copies' },
     { id: 'sales', label: 'Sales', sub: 'Takings for a period' },
     { id: 'history', label: 'History', sub: 'The sales behind the numbers' },
-    { id: 'device', label: 'This device', sub: 'Waivers captured here' },
+    { id: 'waivers', label: 'Waiver forms', sub: 'The signed forms themselves' },
   ];
 
   function render() {
@@ -100,8 +101,8 @@
           </select>
         </div>
         <div class="boBarActions">
-          <a class="btn" href="${state.user.role === 'manager' || state.user.role === 'admin' ? '../manager/' : '../reception/'}">Back to work</a>
-          <button id="rcLock" class="btn">Lock now</button>
+          <a class="btn" href="${state.user.role === 'manager' || state.user.role === 'admin' ? '../manager/' : '../reception/'}">I’m still here — keep me signed in</a>
+          <button id="rcLock" class="btn">Sign out now</button>
         </div>
       </div>
       <nav class="boNav noprint" role="tablist">
@@ -121,11 +122,12 @@
     // The device tools are real markup on the page (they own a detail modal
     // and the export/ZIP machinery); the tabs just show or hide them.
     const dev = document.getElementById('deviceTools');
-    if (dev) dev.classList.toggle('hidden', state.tab !== 'device');
+    if (dev) dev.classList.toggle('hidden', state.tab !== 'waivers');
     $('#rcBody').innerHTML = '';
     if (state.tab === 'approved') renderApproved();
     else if (state.tab === 'sales') renderSales();
     else if (state.tab === 'history') renderHistory();
+    else if (state.tab === 'waivers') renderWaivers();
   }
 
   // --------------------------------------------------- approved documents
@@ -295,6 +297,10 @@
           <span id="sMsg" class="muted" role="status"></span>
         </div>
         <div id="sTotals" class="statRow" style="margin-top:12px;"></div>
+        <div class="chartBox">
+          <div class="chartTitle">Sales per day</div>
+          <canvas id="sChart" role="img" aria-label="Sales per day"></canvas>
+        </div>
         <div class="tableWrap" style="margin-top:12px;"><table>
           <thead><tr><th>Date</th><th class="num">Sales</th><th class="num">Commission</th>
             <th class="num">Cash</th><th class="num">BPI (QR)</th><th class="num">GCash</th><th class="num">Sessions</th></tr></thead>
@@ -308,6 +314,89 @@
       $('#sFrom').value = todayISO(); $('#sTo').value = todayISO(); loadSales();
     });
     loadSales();
+  }
+
+  // A bar per day, drawn straight onto a canvas — no library, no CDN. The
+  // colours are read from the design tokens so it matches everything else.
+  function drawSalesChart(days) {
+    const cv = document.getElementById('sChart');
+    if (!cv) return;
+    const css = getComputedStyle(document.documentElement);
+    const tok = (n, fallback) => (css.getPropertyValue(n) || '').trim() || fallback;
+    const brand = tok('--brand', '#1f6feb');
+    const line = tok('--line', '#e3e7ec');
+    const ink3 = tok('--ink-3', '#6b7480');
+
+    const rect = cv.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(320, Math.round(rect.width));
+    const h = 240;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    cv.style.height = h + 'px';
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+
+    const data = days.slice().sort((a, b) => a.date.localeCompare(b.date));
+    if (!data.length) {
+      c.fillStyle = ink3;
+      c.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      c.textAlign = 'center';
+      c.fillText('No sales in this range', w / 2, h / 2);
+      return;
+    }
+
+    const padL = 56, padR = 12, padT = 14, padB = 34;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+    const max = Math.max(...data.map((d) => d.sales), 1);
+    // A round number above the tallest bar, so the axis reads sensibly.
+    const step = Math.pow(10, Math.floor(Math.log10(max)));
+    const top = Math.ceil(max / step) * step;
+
+    c.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+    c.textAlign = 'right';
+    c.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+      const y = padT + plotH - (plotH * i) / 4;
+      c.strokeStyle = line;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(padL, Math.round(y) + 0.5);
+      c.lineTo(w - padR, Math.round(y) + 0.5);
+      c.stroke();
+      c.fillStyle = ink3;
+      c.fillText(Math.round((top * i) / 4).toLocaleString('en-PH'), padL - 8, y);
+    }
+
+    const slot = plotW / data.length;
+    const barW = Math.max(6, Math.min(46, slot * 0.62));
+    c.textAlign = 'center';
+    c.textBaseline = 'top';
+    data.forEach((d, i) => {
+      const x = padL + slot * i + (slot - barW) / 2;
+      const barH = Math.max(1, (d.sales / top) * plotH);
+      const y = padT + plotH - barH;
+      c.fillStyle = brand;
+      const r = Math.min(4, barW / 2);
+      c.beginPath();
+      c.moveTo(x, y + barH);
+      c.lineTo(x, y + r);
+      c.quadraticCurveTo(x, y, x + r, y);
+      c.lineTo(x + barW - r, y);
+      c.quadraticCurveTo(x + barW, y, x + barW, y + r);
+      c.lineTo(x + barW, y + barH);
+      c.closePath();
+      c.fill();
+
+      // Only label what will fit, so a long month does not turn to mush.
+      const every = Math.ceil(data.length / 12);
+      if (i % every === 0) {
+        c.fillStyle = ink3;
+        c.fillText(d.date.slice(8), x + barW / 2, padT + plotH + 8);
+      }
+    });
   }
 
   const payOf = (r) => {
@@ -346,6 +435,7 @@
         ['Sessions', String(recs.length)],
       ].map(([l, v]) => `<div class="stat"><div class="statLabel">${esc(l)}</div><div class="statValue">${esc(v)}</div></div>`).join('');
 
+      drawSalesChart(days);
       $('#sRows').innerHTML = days.length
         ? days.map((d) => `<tr>
             <td>${esc(d.date)}</td>
@@ -404,6 +494,186 @@
       msg.textContent = e.unauthorized ? 'Session expired — sign in again' : e.message;
       if (e.unauthorized) { state.user = null; render(); }
     }
+  }
+
+  // ------------------------------------------------------- waiver forms
+  // The signed forms themselves.
+  //
+  // This used to read ONLY this iPad's own database, which is why it could
+  // show nothing while Sales showed four sales for the same day: a device
+  // that was reinstalled (or simply a different device from the one that took
+  // the waiver) has an empty local database while the server still holds
+  // every record. The list is now the SERVER's, so it always matches Sales.
+  //
+  // The photo and the signature deliberately never leave the iPad that
+  // captured them, so a row shows them only when this is that iPad. Rows
+  // from elsewhere open with everything else and say where the images are.
+  function renderWaivers() {
+    $('#rcBody').innerHTML = `
+      <div class="panel">
+        <div class="secHead">
+          <h2>Waiver forms</h2>
+          <div class="muted">Every waiver taken at this parlor in the period.
+            The photo and signature stay on the iPad that took the waiver, so
+            they open only on that device.</div>
+        </div>
+        <div class="row">
+          <div><label for="wFrom">From</label><input type="date" id="wFrom" value="${monthStart()}" /></div>
+          <div><label for="wTo">To</label><input type="date" id="wTo" value="${todayISO()}" /></div>
+          <button id="wApply" class="btn primary">Show</button>
+          <span id="wMsg" class="muted" role="status"></span>
+        </div>
+        <div id="wRows" style="margin-top:12px;"></div>
+      </div>
+      <div id="wDetail"></div>
+      <div class="panel">
+        <div class="secHead">
+          <h2>This iPad</h2>
+          <div class="muted">Tools for the waivers captured on this device only —
+            the ones whose photo and signature are stored here.</div>
+        </div>
+        <div id="deviceToolsSlot"></div>
+      </div>`;
+    $('#wApply').addEventListener('click', () => busy($('#wApply'), 'Loading…', loadWaivers));
+    // The export / clear tools are real markup on the page; move them in.
+    const dev = document.getElementById('deviceTools');
+    const slot = document.getElementById('deviceToolsSlot');
+    if (dev && slot) slot.appendChild(dev);
+    loadWaivers();
+  }
+
+  // The ids this iPad holds locally, so rows can offer the images.
+  async function localWaiverIds() {
+    try {
+      return await new Promise((resolve, reject) => {
+        const q = indexedDB.open('thai_boran_waiver_db', 1);
+        q.onupgradeneeded = () => {
+          const d = q.result;
+          if (!d.objectStoreNames.contains('submissions')) d.createObjectStore('submissions', { keyPath: 'id' });
+        };
+        q.onsuccess = () => {
+          const d = q.result;
+          const g = d.transaction('submissions', 'readonly').objectStore('submissions').getAll();
+          g.onsuccess = () => { d.close(); resolve(new Map((g.result || []).map((r) => [r.id, r]))); };
+          g.onerror = () => { d.close(); reject(g.error); };
+        };
+        q.onerror = () => reject(q.error);
+      });
+    } catch (_) {
+      return new Map();
+    }
+  }
+
+  async function loadWaivers() {
+    const msg = $('#wMsg');
+    msg.className = 'muted';
+    msg.textContent = 'Loading…';
+    try {
+      const q = new URLSearchParams({ site: state.site, from: $('#wFrom').value, to: $('#wTo').value });
+      const [out, local] = await Promise.all([
+        TB.api('/api/sessions?' + q.toString()),
+        localWaiverIds(),
+      ]);
+      state.waivers = out.records;
+      state.localWaivers = local;
+      const rows = out.records.slice().sort((a, b) =>
+        b.date.localeCompare(a.date) || String(b.timestart).localeCompare(String(a.timestart)));
+
+      const onThisIpad = rows.filter((r) => local.has(r.id)).length;
+      msg.textContent = rows.length
+        ? `${rows.length} waiver(s) · ${onThisIpad} with photo and signature on this iPad`
+        : '';
+
+      $('#wRows').innerHTML = rows.length
+        ? `<div class="tableWrap"><table>
+            <thead><tr><th>Date</th><th>Time</th><th>Client</th><th>Therapist</th>
+              <th>Service</th><th>Add-ons</th><th>Photo &amp; signature</th><th></th></tr></thead>
+            <tbody>${rows.map((r) => `<tr>
+              <td>${esc(r.date)}</td><td>${esc(r.timestart)}</td>
+              <td>${esc(r.customer)}</td><td>${esc(r.therapistName)}</td>
+              <td>${esc(r.service)}</td><td>${esc(r.addons)}</td>
+              <td>${local.has(r.id)
+                ? '<span class="ok">on this iPad</span>'
+                : '<span class="muted">on the iPad that took it</span>'}</td>
+              <td><button class="btn wOpen" data-id="${esc(r.id)}">Open</button></td>
+            </tr>`).join('')}</tbody></table></div>`
+        : '<span class="muted">No waivers in this range.</span>';
+
+      $('#wRows').querySelectorAll('.wOpen').forEach((b) =>
+        b.addEventListener('click', () => openWaiver(b.dataset.id)));
+    } catch (e) {
+      msg.className = 'err';
+      msg.textContent = e.unauthorized ? 'Session expired — sign in again' : TB.explain(e, 'list the waivers').split(String.fromCharCode(10))[0];
+      if (e.unauthorized) { state.user = null; render(); }
+    }
+  }
+
+  function openWaiver(id) {
+    const rec = (state.waivers || []).find((r) => r.id === id);
+    if (!rec) return;
+    const local = state.localWaivers && state.localWaivers.get(id);
+    const host = $('#wDetail');
+
+    const line = (k, v) => v === '' || v == null
+      ? ''
+      : `<tr><td class="muted">${esc(k)}</td><td>${esc(v)}</td></tr>`;
+
+    const imgs = local
+      ? `<div class="waiverImages">
+           ${local.photoBlob instanceof Blob || (local.photoBytes && local.photoBytes.length)
+             ? '<figure><figcaption>Photo</figcaption><img id="wPhoto" alt="Client photo" /></figure>' : ''}
+           ${local.sigBytes && local.sigBytes.length
+             ? '<figure><figcaption>Signature</figcaption><img id="wSig" alt="Signature" /></figure>' : ''}
+         </div>`
+      : `<div class="muted">The photo and signature for this waiver are on the iPad
+           that took it — they are never copied to the server or to other devices.</div>`;
+
+    host.innerHTML = `
+      <div class="panel">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <h2 style="margin:0">${esc(rec.customer)} — ${esc(rec.date)} ${esc(rec.timestart)}</h2>
+          <button id="wClose" class="btn">Close</button>
+        </div>
+        <div class="waiverDetail">
+          <table class="kvTable">
+            ${line('Client', rec.customer)}
+            ${line('Date', rec.date)}
+            ${line('Time', rec.timestart)}
+            ${line('Therapist', rec.therapistName)}
+            ${line('Service', rec.service)}
+            ${line('Add-ons', rec.addons)}
+            ${line('Hours', rec.hours)}
+            ${line('Stub #', rec.stubNumber)}
+            ${line('Paid by', PAY_LABELS[payOf(rec)] || payOf(rec))}
+            ${line('Gross', money0(rec.gross))}
+            ${line('Discount', money0(rec.discount))}
+            ${line('Net', money0(rec.net))}
+            ${line('Senior / PWD', rec.senior ? 'Yes' + (rec.seniorId ? ' (' + rec.seniorId + ')' : '') : 'No')}
+            ${line('Taken by', rec.receptionistName)}
+          </table>
+          ${imgs}
+        </div>
+      </div>`;
+    $('#wClose').addEventListener('click', () => { host.innerHTML = ''; });
+
+    // The images come out of this iPad's own database.
+    if (local) {
+      const photo = $('#wPhoto');
+      if (photo) {
+        const url = local.photoBlob instanceof Blob
+          ? URL.createObjectURL(local.photoBlob)
+          : URL.createObjectURL(new Blob([new Uint8Array(local.photoBytes || [])], { type: 'image/jpeg' }));
+        photo.src = url;
+        photo.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
+      }
+      const sig = $('#wSig');
+      if (sig) {
+        const url = URL.createObjectURL(new Blob([new Uint8Array(local.sigBytes || [])], { type: 'image/png' }));
+        sig.src = url;
+        sig.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
+      }
+    }
+    host.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   // ----------------------------------------------------------------- init
