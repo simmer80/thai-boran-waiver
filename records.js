@@ -40,7 +40,7 @@
   const state = {
     user: null, site: '', tab: 'approved',
     sigUrl: '', subSigUrl: '',
-    waivers: [], localWaivers: null,
+    waivers: [], waiverMedia: {},
   };
 
   const siteQ = () => 'site=' + encodeURIComponent(state.site);
@@ -497,25 +497,24 @@
   }
 
   // ------------------------------------------------------- waiver forms
-  // The signed forms themselves.
+  // ONE list, and it is the SERVER's.
   //
-  // This used to read ONLY this iPad's own database, which is why it could
-  // show nothing while Sales showed four sales for the same day: a device
-  // that was reinstalled (or simply a different device from the one that took
-  // the waiver) has an empty local database while the server still holds
-  // every record. The list is now the SERVER's, so it always matches Sales.
+  // This used to be two: a server list, plus a separate "This iPad" box for
+  // the device's own copies. That split existed because photos and signatures
+  // never left the tablet, so only the capturing device could show a complete
+  // waiver. They now sync with the record, so there is nothing left for a
+  // second list to mean — every device sees every waiver, images included.
   //
-  // The photo and the signature deliberately never leave the iPad that
-  // captured them, so a row shows them only when this is that iPad. Rows
-  // from elsewhere open with everything else and say where the images are.
+  // The images are fetched on demand when a waiver is opened, not with the
+  // list: a month of face photos is many megabytes and nobody looks at most
+  // of them.
   function renderWaivers() {
     $('#rcBody').innerHTML = `
       <div class="panel">
         <div class="secHead">
           <h2>Waiver forms</h2>
-          <div class="muted">Every waiver taken at this parlor in the period.
-            The photo and signature stay on the iPad that took the waiver, so
-            they open only on that device.</div>
+          <div class="muted">Every waiver taken at this parlor, with the client's own
+            details, photo and signature. The same list on every device.</div>
         </div>
         <div class="row">
           <div><label for="wFrom">From</label><input type="date" id="wFrom" value="${monthStart()}" /></div>
@@ -528,9 +527,9 @@
       <div id="wDetail"></div>
       <div class="panel">
         <div class="secHead">
-          <h2>This iPad</h2>
-          <div class="muted">Tools for the waivers captured on this device only —
-            the ones whose photo and signature are stored here.</div>
+          <h2>Export and housekeeping</h2>
+          <div class="muted">Take a copy off the tablet, or clear what this device has
+            cached. Clearing here never touches the waivers on the server.</div>
         </div>
         <div id="deviceToolsSlot"></div>
       </div>`;
@@ -538,30 +537,8 @@
     // The export / clear tools are real markup on the page; move them in.
     const dev = document.getElementById('deviceTools');
     const slot = document.getElementById('deviceToolsSlot');
-    if (dev && slot) slot.appendChild(dev);
+    if (dev && slot) { dev.classList.remove('hidden'); slot.appendChild(dev); }
     loadWaivers();
-  }
-
-  // The ids this iPad holds locally, so rows can offer the images.
-  async function localWaiverIds() {
-    try {
-      return await new Promise((resolve, reject) => {
-        const q = indexedDB.open('thai_boran_waiver_db', 1);
-        q.onupgradeneeded = () => {
-          const d = q.result;
-          if (!d.objectStoreNames.contains('submissions')) d.createObjectStore('submissions', { keyPath: 'id' });
-        };
-        q.onsuccess = () => {
-          const d = q.result;
-          const g = d.transaction('submissions', 'readonly').objectStore('submissions').getAll();
-          g.onsuccess = () => { d.close(); resolve(new Map((g.result || []).map((r) => [r.id, r]))); };
-          g.onerror = () => { d.close(); reject(g.error); };
-        };
-        q.onerror = () => reject(q.error);
-      });
-    } catch (_) {
-      return new Map();
-    }
   }
 
   async function loadWaivers() {
@@ -570,31 +547,32 @@
     msg.textContent = 'Loading…';
     try {
       const q = new URLSearchParams({ site: state.site, from: $('#wFrom').value, to: $('#wTo').value });
-      const [out, local] = await Promise.all([
-        TB.api('/api/sessions?' + q.toString()),
-        localWaiverIds(),
-      ]);
-      state.waivers = out.records;
-      state.localWaivers = local;
+      const out = await TB.api('/api/sessions?' + q.toString());
       const rows = out.records.slice().sort((a, b) =>
-        b.date.localeCompare(a.date) || String(b.timestart).localeCompare(String(a.timestart)));
+        String(b.date).localeCompare(String(a.date)) ||
+        String(b.timestart).localeCompare(String(a.timestart)));
+      state.waivers = rows;
 
-      const onThisIpad = rows.filter((r) => local.has(r.id)).length;
-      msg.textContent = rows.length
-        ? `${rows.length} waiver(s) · ${onThisIpad} with photo and signature on this iPad`
-        : '';
+      // Which of these actually have an image on the server, asked one day at
+      // a time so the answer shown on each row is a fact, not a guess.
+      state.waiverMedia = await mediaIndexFor(rows);
 
+      msg.textContent = rows.length ? `${rows.length} waiver(s)` : '';
       $('#wRows').innerHTML = rows.length
         ? `<div class="tableWrap"><table>
-            <thead><tr><th>Date</th><th>Time</th><th>Client</th><th>Therapist</th>
-              <th>Service</th><th>Add-ons</th><th>Photo &amp; signature</th><th></th></tr></thead>
+            <thead><tr>
+              <th>Taken</th><th>Date</th><th>Time</th><th>Client</th><th>Contact</th>
+              <th>Therapist</th><th>Service</th><th>Add-ons</th><th>Paid</th>
+              <th>Photo</th><th></th>
+            </tr></thead>
             <tbody>${rows.map((r) => `<tr>
+              <td>${esc(r.timestamp || '')}</td>
               <td>${esc(r.date)}</td><td>${esc(r.timestart)}</td>
-              <td>${esc(r.customer)}</td><td>${esc(r.therapistName)}</td>
+              <td>${esc(r.customer)}</td><td>${esc(r.contact || '')}</td>
+              <td>${esc(r.therapistName)}</td>
               <td>${esc(r.service)}</td><td>${esc(r.addons)}</td>
-              <td>${local.has(r.id)
-                ? '<span class="ok">on this iPad</span>'
-                : '<span class="muted">on the iPad that took it</span>'}</td>
+              <td>${esc(money0(r.net))}</td>
+              <td>${mediaCell(r)}</td>
               <td><button class="btn wOpen" data-id="${esc(r.id)}">Open</button></td>
             </tr>`).join('')}</tbody></table></div>`
         : '<span class="muted">No waivers in this range.</span>';
@@ -603,30 +581,69 @@
         b.addEventListener('click', () => openWaiver(b.dataset.id)));
     } catch (e) {
       msg.className = 'err';
-      msg.textContent = e.unauthorized ? 'Session expired — sign in again' : TB.explain(e, 'list the waivers').split(String.fromCharCode(10))[0];
+      msg.textContent = e.unauthorized
+        ? 'Session expired — sign in again'
+        : TB.explain(e, 'list the waivers').split(String.fromCharCode(10))[0];
       if (e.unauthorized) { state.user = null; render(); }
     }
+  }
+
+  // The media index is per day, so ask once per day in the range rather than
+  // once per waiver. A failure here must never empty the list: the rows are
+  // still correct, they just cannot promise an image.
+  async function mediaIndexFor(rows) {
+    const byDate = new Map();
+    for (const r of rows) {
+      if (!byDate.has(r.date)) byDate.set(r.date, []);
+      byDate.get(r.date).push(r.id);
+    }
+    const out = {};
+    await Promise.all([...byDate.entries()].map(async ([date, ids]) => {
+      try {
+        const q = new URLSearchParams({ site: state.site, date, ids: ids.join(',') });
+        const res = await TB.api('/api/sessions/media-index?' + q.toString());
+        Object.assign(out, res.media || {});
+      } catch (_) { /* leave those rows unknown */ }
+    }));
+    return out;
+  }
+
+  function mediaCell(r) {
+    const m = (state.waiverMedia || {})[r.id];
+    if (!m) return '<span class="muted">—</span>';
+    if (m.photo && m.signature) return '<span class="ok">photo + signature</span>';
+    if (m.photo) return '<span class="ok">photo</span>';
+    if (m.signature) return '<span class="ok">signature</span>';
+    return '<span class="muted">none</span>';
   }
 
   function openWaiver(id) {
     const rec = (state.waivers || []).find((r) => r.id === id);
     if (!rec) return;
-    const local = state.localWaivers && state.localWaivers.get(id);
+    // UNDEFINED means the media index could not be reached, which is NOT the
+    // same as knowing there is no photo. Saying "none was stored" on a server
+    // hiccup would be a confident lie about a client’s record.
+    const known = (state.waiverMedia || {})[id];
+    const m = known || {};
     const host = $('#wDetail');
 
     const line = (k, v) => v === '' || v == null
       ? ''
       : `<tr><td class="muted">${esc(k)}</td><td>${esc(v)}</td></tr>`;
 
-    const imgs = local
-      ? `<div class="waiverImages">
-           ${local.photoBlob instanceof Blob || (local.photoBytes && local.photoBytes.length)
-             ? '<figure><figcaption>Photo</figcaption><img id="wPhoto" alt="Client photo" /></figure>' : ''}
-           ${local.sigBytes && local.sigBytes.length
-             ? '<figure><figcaption>Signature</figcaption><img id="wSig" alt="Signature" /></figure>' : ''}
-         </div>`
-      : `<div class="muted">The photo and signature for this waiver are on the iPad
-           that took it — they are never copied to the server or to other devices.</div>`;
+    // Inline and immediate: the whole point is that the receptionist does not
+    // have to go anywhere else to see who signed what.
+    const figures = [];
+    if (m.photo) figures.push('<figure><figcaption>Client photo</figcaption><img id="wPhoto" alt="Client photo" /></figure>');
+    if (m.signature) figures.push('<figure><figcaption>Signature</figcaption><img id="wSig" alt="Client signature" /></figure>');
+    const imgs = figures.length
+      ? '<div class="waiverImages">' + figures.join('') + '</div>'
+      : known
+        ? '<div class="muted">No photo or signature was stored for this waiver ' +
+          '— either the photo was skipped, or it was taken before images were ' +
+          'kept on the server.</div>'
+        : '<div class="warn">Could not check whether this waiver has a photo or ' +
+          'signature — the server did not answer. Try again in a moment.</div>';
 
     host.innerHTML = `
       <div class="panel">
@@ -636,7 +653,11 @@
         </div>
         <div class="waiverDetail">
           <table class="kvTable">
+            ${line('Captured', rec.timestamp)}
             ${line('Client', rec.customer)}
+            ${line('Address', rec.address)}
+            ${line('Contact', rec.contact)}
+            ${line('Declared conditions', rec.conditions)}
             ${line('Date', rec.date)}
             ${line('Time', rec.timestart)}
             ${line('Therapist', rec.therapistName)}
@@ -656,25 +677,28 @@
       </div>`;
     $('#wClose').addEventListener('click', () => { host.innerHTML = ''; });
 
-    // The images come out of this iPad's own database.
-    if (local) {
-      const photo = $('#wPhoto');
-      if (photo) {
-        const url = local.photoBlob instanceof Blob
-          ? URL.createObjectURL(local.photoBlob)
-          : URL.createObjectURL(new Blob([new Uint8Array(local.photoBytes || [])], { type: 'image/jpeg' }));
-        photo.src = url;
-        photo.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
-      }
-      const sig = $('#wSig');
-      if (sig) {
-        const url = URL.createObjectURL(new Blob([new Uint8Array(local.sigBytes || [])], { type: 'image/png' }));
-        sig.src = url;
-        sig.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
-      }
-    }
+    if (m.photo) loadWaiverImage('#wPhoto', rec, 'photo');
+    if (m.signature) loadWaiverImage('#wSig', rec, 'signature');
     host.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+
+  // The image endpoints need the bearer token, so they cannot be a plain
+  // <img src>. Fetch as a blob and hand the element an object URL.
+  async function loadWaiverImage(sel, rec, kind) {
+    const img = $(sel);
+    if (!img) return;
+    try {
+      const q = new URLSearchParams({ site: state.site, date: rec.date });
+      const blob = await TB.api(`/api/sessions/${encodeURIComponent(rec.id)}/${kind}?` + q.toString());
+      const url = URL.createObjectURL(blob);
+      img.src = url;
+      img.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
+    } catch (_) {
+      const fig = img.closest('figure');
+      if (fig) fig.innerHTML = '<figcaption class="muted">This image could not be loaded.</figcaption>';
+    }
+  }
+
 
   // ----------------------------------------------------------------- init
   async function init() {

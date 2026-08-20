@@ -449,6 +449,10 @@ function pricingForDisplay(r) {
   };
 }
 
+// UNREACHABLE as of this round — nothing calls this. It scraped service and
+// add-on names out of session rows before the price list became the single
+// source of those names. Left in place only as a reference for how the old
+// free-text data looked; it feeds nothing.
 function collectDistinctItemsFromRows(rows) {
   const svc = new Set();
   const add = new Set();

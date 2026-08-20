@@ -9,8 +9,17 @@
 // Migration: records saved before this feature have no `synced` flag; they
 // are treated as unsynced and uploaded on the first successful sync.
 //
-// Photos and signatures deliberately stay on the iPad (IndexedDB / manual
-// export) — only the session/sales fields go to the server.
+// Photos and signatures used to stay on the iPad, which meant a lost, wiped
+// or replaced tablet destroyed them permanently and no other device could
+// ever show them. They now ride up too, but as a SEPARATE, SECOND step:
+//
+//   1. the record syncs, exactly as before — this is what must never fail;
+//   2. the images upload one waiver at a time, retrying on later passes.
+//
+// Splitting them that way means a big photo on a slow line can never hold up
+// or fail a batch of records, and an image that will not upload today simply
+// tries again tomorrow. Uploads are idempotent server-side, so a retry after
+// an ambiguous failure costs nothing.
 
 'use strict';
 
@@ -67,6 +76,12 @@
       receptionistId: r.receptionistId || (user ? user.uid : ''),
       receptionistName: r.receptionistName || (user ? user.name : ''),
       stubNumber: r.stubNumber || '',
+      // The waiver's own content. These were captured and then dropped at
+      // this line: the client's declared MEDICAL CONDITIONS never left the
+      // tablet, which is the part of a waiver that actually matters.
+      address: r.address || '',
+      contact: r.contact || '',
+      conditions: r.conditions || '',
       service: r.services || '',
       addons: r.addons || 'None',
       senior: !!r.senior,
@@ -125,6 +140,10 @@
         if (updated.length) await putAll(updated);
       }
       lastResult = 'synced';
+
+      // Images LAST and in their own try: the records are already safely
+      // on the server by this point, and nothing below may undo that.
+      try { await syncMedia(); } catch (_) { /* retries on the next pass */ }
     } catch (e) {
       // offline / asleep / not logged in — records stay queued, nothing lost
       lastResult = e.unauthorized ? 'not logged in' : e.offline ? 'offline' : e.message;
@@ -134,6 +153,80 @@
       await refreshChip();
       if (lastResult === 'not logged in') setChip('Sign in (Front desk tab) to sync', 'warn');
     }
+  }
+
+  // ------------------------------------------------------- images
+  // How many waivers on this iPad still have images the server has never
+  // seen. Shown to the receptionist so "everything is safe" is a fact she
+  // can check, not a promise.
+  async function pendingMediaCount() {
+    const all = await getAll();
+    return all.filter(needsMedia).length;
+  }
+
+  function needsMedia(r) {
+    if (r.mediaSynced) return false;
+    const hasPhoto = r.photoBlob instanceof Blob || (Array.isArray(r.photoBytes) && r.photoBytes.length);
+    const hasSig = Array.isArray(r.sigBytes) && r.sigBytes.length;
+    return !!(hasPhoto || hasSig);
+  }
+
+  function bytesToBase64(bytes) {
+    // Chunked: String.fromCharCode.apply on a whole photo blows the stack.
+    let bin = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  async function photoBase64(r) {
+    let blob = null;
+    if (r.photoBlob instanceof Blob) blob = r.photoBlob;
+    else if (Array.isArray(r.photoBytes) && r.photoBytes.length) {
+      blob = new Blob([new Uint8Array(r.photoBytes)], { type: 'image/jpeg' });
+    }
+    if (!blob) return null;
+    // Re-compress for the wire. The copy kept on this iPad is untouched;
+    // this only decides what the data repo has to carry for ever.
+    if (window.TBImage && TBImage.downscaleToJpegBlob) {
+      try { blob = await TBImage.downscaleToJpegBlob(blob, 900, 0.72); } catch (_) { /* send as-is */ }
+    }
+    return bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+  }
+
+  // One waiver at a time, deliberately: a single failure must cost one
+  // upload, not a batch, and a slow line must not stall the queue.
+  async function syncMedia() {
+    const all = await getAll();
+    const todo = all.filter(needsMedia);
+    if (!todo.length) return 0;
+    let done = 0;
+    for (const r of todo) {
+      try {
+        const photo = await photoBase64(r);
+        const signature = Array.isArray(r.sigBytes) && r.sigBytes.length
+          ? bytesToBase64(new Uint8Array(r.sigBytes))
+          : null;
+        if (!photo && !signature) continue;
+        await TB.api('/api/sessions/' + encodeURIComponent(r.id) + '/media', {
+          method: 'PUT',
+          body: { date: r.date, photo, signature },
+        });
+        await putAll([{ ...r, mediaSynced: true, mediaSyncedAt: Date.now() }]);
+        done += 1;
+      } catch (e) {
+        // 4xx means this one will never succeed as-is (wrong format, too
+        // big): stop re-sending it every pass, but keep the local copy.
+        if (e.status >= 400 && e.status < 500 && !e.unauthorized) {
+          await putAll([{ ...r, mediaSynced: true, mediaRejected: e.message || 'rejected' }]);
+        } else {
+          throw e;   // offline / asleep / auth — try the whole lot again later
+        }
+      }
+    }
+    return done;
   }
 
   function init() {
@@ -160,5 +253,5 @@
     if (navigator.onLine) setTimeout(() => syncNow(), 1500);
   }
 
-  window.TBSync = { init, syncNow, refreshChip, pendingCount, toServerRecord };
+  window.TBSync = { init, syncNow, refreshChip, pendingCount, pendingMediaCount, syncMedia, toServerRecord };
 })();

@@ -10,10 +10,26 @@ The app has four tabs across the top:
 | **Waiver Form** | everyone | Taking a new client's waiver |
 | **Front desk** | receptionist | Checking the day and making the documents |
 | **Manager** | manager only | Approving documents |
-| **Sales & history** | both | Approved documents, sales, past clients |
+| **Sales & history** | both | Approved documents, sales, and every waiver form |
 
 The **Waiver Form** tab is the one the client sees. It is the tab the iPad
 should be left on. It shows nothing about money or other clients.
+
+---
+
+## Where the waivers are kept
+
+Everything a client signs — their details, the conditions they declared,
+their photo and their signature — is saved on the iPad first, so the waiver
+form keeps working with no WiFi. It is then sent to the server.
+
+That means **the waivers do not depend on one iPad any more.** If a tablet is
+lost, broken or replaced, everything that reached the server is still there,
+and it opens on any other device and on the manager’s laptop.
+
+You can check this yourself: **Front desk → Records → Photos and signatures**
+says how many are still waiting to be sent, and lets you send them now. When
+it says everything is on the server, everything is on the server.
 
 ---
 

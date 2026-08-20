@@ -114,7 +114,12 @@
       if (!res.ok) {
         let msg = 'request failed';
         try { msg = (await res.json()).error || msg; } catch (_) {}
-        throw new Error(msg);
+        // Carry the status: a caller needs to tell "try again later" (5xx,
+        // asleep) from "this will never work" (4xx — bad format, too big),
+        // or it retries a doomed request on every pass for ever.
+        const err = new Error(msg);
+        err.status = res.status;
+        throw err;
       }
       // Binary answers (PDF exports, the approver's signature image) come
       // back as blobs; everything else is JSON.

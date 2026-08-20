@@ -235,7 +235,7 @@ function waiverInProgress() {
   if (state.addonsChecked.some(Boolean)) return "this client’s waiver is part-filled";
   // Read the boxes themselves too, so this does not depend on when the form
   // happens to copy them into state.
-  const boxes = document.querySelectorAll('.checks input[type="checkbox"], #addonsBox input[type="checkbox"]');
+  const boxes = document.querySelectorAll('.checks input[type="checkbox"], #addonsList input[type="checkbox"]');
   for (const b of boxes) if (b.checked && b.id !== 'consentPrivacy') return "this client’s waiver is part-filled";
   const svc = el('services');
   if (svc && svc.selectedIndex > 0) return "this client’s waiver is part-filled";
@@ -628,6 +628,9 @@ function canvasToPngBlob(canvas) {
 // Downscale a captured image to a JPEG Blob (max long edge / quality).
 // An ID face photo needs no more than ~1024px. Never throws: on any failure
 // it returns the original blob so a photo is never lost.
+// Exposed as TBImage at the bottom of this file: sync.js re-compresses
+// images for the wire and runs on pages where app.js is absent, so it
+// degrades to "send what we already have" rather than break.
 async function downscaleToJpegBlob(srcBlob, maxEdge = 1024, quality = 0.8) {
   const url = URL.createObjectURL(srcBlob);
   try {
@@ -688,6 +691,16 @@ function showModal(id, show) {
   else m.classList.remove('show');
 }
 
+// UNREACHABLE as of this round — nothing calls this.
+//
+// “Take a Photo” now opens the NATIVE camera picker (#photoInput) because
+// getUserMedia does not work on iPad Safari over plain http, which is how
+// the tablets reach the app. That left this whole in-app camera path with
+// no entry point: openCameraModal, snapPhoto, startStream, stopStream, the
+// #modalCam markup and #snapCanvas are all dormant.
+//
+// Kept, not deleted, because it is the fallback if the parlors ever move to
+// https and want an in-app camera again. Do not “fix” it — it is not run.
 async function openCameraModal() {
   showModal('modalCam', true);
   try {
@@ -726,7 +739,7 @@ async function snapPhoto() {
   );
   const blob = await downscaleToJpegBlob(blob0, 1024, 0.8);
 
-    state.photoBlob = blob;
+  state.photoBlob = blob;   // already downscaled above
   state.photoTaken = true;
 
   const consent = el('consentPrivacy');
@@ -1448,5 +1461,9 @@ document.addEventListener('touchend', () => {
 
   await renderHistory();
 }
+
+// The image helper, for sync.js. It runs on back-office pages where this
+// file is not loaded, so it must degrade to sending what we already have.
+window.TBImage = { downscaleToJpegBlob };
 
 init();

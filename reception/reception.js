@@ -56,10 +56,62 @@
     });
   }
 
+  // The list is the SERVER’s, not this device’s.
+  //
+  // Update this device’s own copy of a waiver, if it has one. A record that
+  // was captured on another iPad has nothing here to update, and must not be
+  // given a hollow one.
+  async function touchLocal(rec, addons, synced) {
+    try {
+      const mine = (await dbAll()).find((x) => x.id === rec.id);
+      if (!mine) return;
+      await dbPut({ ...mine, addons, updatedAt: Date.now(), synced });
+    } catch (_) { /* the server already has the change */ }
+  }
+
+  // It used to read only this iPad’s IndexedDB, which meant a receptionist
+  // on a second tablet — or on the same one after a reinstall — could not
+  // add a mid-session add-on to a waiver she had just taken on the other
+  // device: the sale simply was not in her list. The write path was already
+  // server-first, so only the reading half was wrong.
+  //
+  // Offline it falls back to this device’s own copies and SAYS so, rather
+  // than showing a short list that looks like the whole truth.
   async function renderRecords() {
     const host = $('localPanels');
     if (!host) return;
-    const rows = (await dbAll()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 60);
+    const note = $('localMsg');
+
+    const from = new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10);
+    const to = new Date().toISOString().slice(0, 10);
+    const site = (window.TB && TB.deviceSite()) || 'panacan';
+
+    let rows = [];
+    let source = 'server';
+    try {
+      const out = await TB.api('/api/sessions?' + new URLSearchParams({ site, from, to }).toString());
+      rows = (out.records || []).map((r) => ({
+        id: r.id, siteId: r.siteId, date: r.date,
+        name: r.customer, services: r.service, addons: r.addons,
+        createdAt: r.createdAt,
+      }));
+    } catch (e) {
+      source = e.offline ? 'offline' : 'error';
+      rows = (await dbAll()).map((r) => ({
+        id: r.id, siteId: r.siteId, date: r.date,
+        name: r.name, services: r.services, addons: r.addons, createdAt: r.createdAt,
+      }));
+    }
+    rows.sort((x, y) => String(y.date).localeCompare(String(x.date)) || (y.createdAt || 0) - (x.createdAt || 0));
+    rows = rows.slice(0, 60);
+
+    if (note) {
+      note.className = source === 'server' ? 'muted' : 'warn';
+      note.textContent = source === 'server'
+        ? 'Last 14 days, from the server.'
+        : 'Cannot reach the server — showing only what this iPad has. Some waivers may be missing.';
+    }
+
     host.innerHTML = `
       <div class="tableWrap" style="max-height:340px;overflow:auto;">
         <table>
@@ -67,15 +119,21 @@
           <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}</td>
             <td>${esc(r.services)}</td><td>${esc(r.addons)}</td>
             <td><button class="btn rEdit" data-id="${esc(r.id)}">Add add-ons</button></td></tr>`).join('') ||
-            '<tr><td colspan="5" class="muted">No waivers captured on this iPad yet.</td></tr>'}
+            '<tr><td colspan="5" class="muted">No waivers in the last 14 days.</td></tr>'}
           </tbody>
         </table>
       </div>
       <div id="rDetail"></div>`;
 
+    // The editor needs the row it is editing; keep them to hand.
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
     host.querySelectorAll('.rEdit').forEach((b) =>
       b.addEventListener('click', async () => {
-        const rec = (await dbAll()).find((x) => x.id === b.dataset.id);
+        // From the LIST, which may hold rows this device never captured.
+        // Looking it up in the local database again would silently do
+        // nothing for any waiver taken on another iPad.
+        const rec = byId.get(b.dataset.id);
         if (!rec) return;
         const existing = new Set(String(rec.addons || '')
           .split(';').map((s) => s.trim()).filter((x) => x && x.toLowerCase() !== 'none'));
@@ -119,21 +177,32 @@
               method: 'PATCH',
               body: { date: rec.date, fields: { addons }, via: 'add-ons, front desk' },
             });
-            // Keep this iPad's own copy in step for the offline views.
-            await dbPut({ ...rec, addons, updatedAt: Date.now(), synced: true });
+            // Keep this iPad’s own copy in step for the offline views — but
+            // only if it HAS one. Writing a stub for a waiver captured on
+            // another device would invent a local record with no photo or
+            // signature, which the export would then present as complete.
+            await touchLocal(rec, addons, true);
             msg.className = 'ok';
             msg.textContent = 'Saved ✓ — the sale and its total are updated everywhere.';
-            renderRecords();
+            // renderRecords() rebuilds the list and destroys the message
+            // element with it, so the receptionist saw the confirmation for
+            // a few milliseconds. Say it somewhere that survives the refresh.
+            const note = $('localMsg');
+            await renderRecords();
+            if (note) { note.className = 'ok'; note.textContent = 'Add-on saved — the price, the hours and the day’s totals are updated.'; }
           } catch (e) {
             // Offline or the server refused: keep it locally and let the sync
             // queue carry it, but say so instead of pretending it worked.
-            await dbPut({ ...rec, addons, updatedAt: Date.now(), synced: false });
+            await touchLocal(rec, addons, false);
             msg.className = 'err';
             msg.textContent = e.offline
               ? 'Saved on this iPad. It will reach the records when the WiFi is back.'
               : 'Saved on this iPad, but the server said: ' + e.message;
             if (window.TBSync) TBSync.syncNow();
-            renderRecords();
+            const note2 = $('localMsg');
+            const said = msg.textContent;
+            await renderRecords();
+            if (note2) { note2.className = 'err'; note2.textContent = said; }
           } finally {
             btn.disabled = false;
           }

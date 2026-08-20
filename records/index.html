@@ -14,7 +14,8 @@
     <div id="records"></div>
 
 
-    <!-- The waivers captured on THIS iPad: shown only on the device tab. -->
+    <!-- Export and housekeeping for the copies this device holds. The waiver
+         LIST itself is the server’s and lives in records.js. -->
     <div id="deviceTools" class="hidden">
     <div id="pinCard" class="card">
       <div class="section">
@@ -60,8 +61,8 @@
           <div class="row" style="justify-content: space-between; gap: 10px; flex-wrap: wrap;">
           <div>
             <div class="small">Records</div>
-            <div>Waivers captured on this iPad: export or clear</div>
-            <div class="tapHint">Tap a row to open full details, photo and signature</div>
+            <div>Take a copy of what this iPad holds, or clear its cache</div>
+            <div class="tapHint">Clearing here never removes anything from the server</div>
           </div>
           <div class="row" style="flex-wrap: wrap;">
             <button id="btnExportCsv" class="btn" type="button">Export CSV</button>

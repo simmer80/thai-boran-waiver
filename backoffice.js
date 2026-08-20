@@ -250,7 +250,7 @@
     reception: [
       { id: 'today', label: 'Today', sub: 'Check and correct the day' },
       { id: 'documents', label: 'Documents', sub: 'Create, sign, submit' },
-      { id: 'device', label: 'This device', sub: 'Waivers stored on this iPad' },
+      { id: 'device', label: 'Records', sub: 'Waivers and their photos' },
     ],
     manager: [
       { id: 'approve', label: 'To approve', sub: 'Waiting for you' },
@@ -659,18 +659,19 @@
     }
   }
 
-  // -------------------------------------------------------- this device
-  // Two separate things that used to share one box: what the WAIVER FORM
-  // does on this iPad, and the records this iPad captured.
+  // ------------------------------------------------------------ records
+  // The waiver records — read from the SERVER, so every device shows the
+  // same list — and a plain statement of whether this tablet’s photos and
+  // signatures have made it up there yet.
   function renderDeviceSection(host) {
     host.innerHTML = `
       <div class="panel" id="deviceRecords">
         <div class="secHead">
-          <h2>Waivers captured on this iPad</h2>
-          <div class="muted">The waiver forms this iPad took, with their photo and
-            signature. Open one to correct it — add an add-on the client asked for
-            mid-session and the price, the hours and the day’s totals follow
-            automatically.</div>
+          <h2>Waiver records</h2>
+          <div class="muted">Every waiver taken at this parlor, from the server — so
+            the same list appears on every iPad and on the manager’s laptop. Open one
+            to correct it: add an add-on the client asked for mid-session and the
+            price, the hours and the day’s totals follow automatically.</div>
         </div>
         <div class="row">
           <button id="btnEditRecords" class="btn primary" aria-expanded="false">Show the list</button>
@@ -680,14 +681,56 @@
       </div>
       <div class="panel">
         <div class="secHead">
-          <h2>Client photo</h2>
-          <div class="muted">The photo switch is on the <b>Waiver Form</b> tab, beside the
-            photo step — that is where it is needed when a client says no. Tap the coloured
-            bar there to change it.</div>
+          <h2>Photos and signatures</h2>
+          <div class="muted" id="mediaBackupMsg">Checking…</div>
         </div>
-        <a class="btn" href="../index.html">Go to the Waiver Form</a>
+        <div class="row">
+          <button id="btnBackupMedia" class="btn">Send any that are still waiting</button>
+        </div>
       </div>`;
+    wireMediaBackup();
+
     document.dispatchEvent(new CustomEvent('tb:device-section', { detail: {} }));
+  }
+
+  // Photos and signatures used to exist only on the tablet that took them.
+  // They now go to the server with the record, and this panel is how a
+  // receptionist CHECKS that rather than taking it on trust — it counts what
+  // is still waiting on this iPad and lets her push it now.
+  async function wireMediaBackup() {
+    const msg = $('#mediaBackupMsg');
+    const btn = $('#btnBackupMedia');
+    if (!msg || !btn) return;
+
+    async function refresh() {
+      if (!window.TBSync || !TBSync.pendingMediaCount) {
+        msg.textContent = 'Photos and signatures are sent with each waiver.';
+        btn.style.display = 'none';
+        return 0;
+      }
+      let n = 0;
+      try { n = await TBSync.pendingMediaCount(); } catch (_) { n = 0; }
+      msg.className = n ? 'warn' : 'muted';
+      msg.textContent = n
+        ? n + ' photo(s)/signature(s) on this iPad have not reached the server yet.'
+        : 'Every photo and signature on this iPad is on the server. Nothing would be lost if this tablet were replaced.';
+      btn.style.display = n ? '' : 'none';
+      return n;
+    }
+
+    btn.addEventListener('click', () => busy(btn, 'Sending…', async () => {
+      try {
+        const done = await TBSync.syncMedia();
+        const left = await refresh();
+        if (!left) msg.textContent = 'Sent. Every photo and signature on this iPad is now on the server.';
+        else msg.textContent = done + ' sent, ' + left + ' still waiting — try again when the connection is better.';
+      } catch (e) {
+        msg.className = 'err';
+        msg.textContent = TB.explain(e, 'send the photos').split(String.fromCharCode(10))[0];
+      }
+    }));
+
+    refresh();
   }
 
 
