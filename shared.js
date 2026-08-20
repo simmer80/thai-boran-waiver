@@ -12,15 +12,23 @@
   function injectNav(active) {
     const bar = document.createElement('nav');
     bar.className = 'tb-nav';
-    const depth = location.pathname.includes('/reception/') || location.pathname.includes('/manager/') ? '../' : './';
+    const depth = ["/reception/", "/manager/", "/records/"].some((x) => location.pathname.includes(x)) ? "../" : "./";
     const tabs = [
       { id: 'waiver', label: 'Waiver Form', href: depth === './' ? './index.html' : '../index.html' },
-      { id: 'reception', label: 'Receptionist', href: depth + 'reception/' },
+      { id: 'reception', label: 'Front desk', href: depth + 'reception/' },
       { id: 'manager', label: 'Manager', href: depth + 'manager/' },
+      { id: "records", label: "Sales & history", href: depth + "records/" },
     ];
-    bar.innerHTML = tabs
-      .map((t) => `<a href="${t.href}" class="tb-tab${t.id === active ? ' active' : ''}">${t.label}</a>`)
-      .join('') + '<span id="tbNetChip" class="tb-chip">…</span>';
+    // The WAIVER tab is a client-facing screen: an iPad handed across the
+    // counter. It must advertise nothing about the business, so it carries
+    // only itself and one quiet way back to work. The back office is behind
+    // a login anyway, but the labels alone are more than a client should read.
+    const shown = active === "waiver"
+      ? [tabs[0], { id: "staff", label: "Staff", href: tabs[1].href, quiet: true }]
+      : tabs;
+    bar.innerHTML = shown
+      .map((t) => `<a href="${t.href}" class="tb-tab${t.id === active ? " active" : ""}${t.quiet ? " quiet" : ""}">${t.label}</a>`)
+      .join("") + `<span id="tbNetChip" class="tb-chip">...</span>`;
     document.body.insertBefore(bar, document.body.firstChild);
     updateNetChip();
     window.addEventListener('online', updateNetChip);

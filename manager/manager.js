@@ -17,6 +17,28 @@ const STORE = "submissions";
 
 const el = (id) => document.getElementById(id);
 
+// Bind only if the element is on THIS page. The local device tools moved
+// to the shared Sales & history area and no longer all live together, so
+// a missing button must never abort the rest of init().
+// Null-safe element handle: reading or writing a missing one is a no-op,
+// so a page that carries only some of these tools still initialises.
+const NOOP_EL = new Proxy({}, {
+  get(_, k) {
+    if (k === "classList") return { add() {}, remove() {}, toggle() {}, contains: () => false };
+    if (k === "style") return { setProperty() {} };
+    if (k === "addEventListener" || k === "focus" || k === "click") return () => {};
+    if (k === "querySelectorAll") return () => [];
+    return "";
+  },
+  set() { return true; },
+});
+function elx(id) { return el(id) || NOOP_EL; }
+
+function on(id, ev, fn) {
+  const n = el(id);
+  if (n) n.addEventListener(ev, fn);
+}
+
 // Sales pricing storage
 const PRICE_SETS_KEY = "tb_price_sets_v1";
 const PRICE_LOCKED_KEY = "tb_price_locked_v1";
@@ -453,11 +475,11 @@ function renderPriceEditor() {
   const currentSet = sets.slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).at(-1);
 
   const locked = isPricesLocked();
-  el("priceStatus").textContent = locked
+  elx("priceStatus").textContent = locked
     ? `Locked. Current set effective from: ${currentSet?.effectiveFrom || "n/a"}`
     : "Editing unlocked. Change prices then Save and Lock.";
 
-  el("btnPricesSaveLock").disabled = locked;
+  elx("btnPricesSaveLock").disabled = locked;
 
   const tb = el("priceRows");
   tb.innerHTML = "";
@@ -527,23 +549,26 @@ function saveAndLockPrices() {
 }
 
 function setSalesTab(on) {
+  // The local Sales view moved to the shared Sales & history area. On a page
+  // that does not carry it there is nothing to switch between.
+  if (!el("viewSales") || !el("viewHistory")) return;
   const vH = el("viewHistory");
   const vS = el("viewSales");
 
   if (on) {
     vH.classList.add("hidden");
     vS.classList.remove("hidden");
-    el("tabHistory").classList.remove("primary");
-    el("tabSales").classList.add("primary");
-    el("tabHint").textContent = "Sales view";
+    elx("tabHistory").classList.remove("primary");
+    elx("tabSales").classList.add("primary");
+    elx("tabHint").textContent = "Sales view";
     renderPriceEditor();
     renderSales();
   } else {
     vS.classList.add("hidden");
     vH.classList.remove("hidden");
-    el("tabSales").classList.remove("primary");
-    el("tabHistory").classList.add("primary");
-    el("tabHint").textContent = "History view";
+    elx("tabSales").classList.remove("primary");
+    elx("tabHistory").classList.add("primary");
+    elx("tabHint").textContent = "History view";
   }
 }
 
@@ -605,8 +630,8 @@ function renderSales() {
     tb.appendChild(tr);
   }
 
-    el("salesTotal").textContent = String(total);
-  el("salesCount").textContent = String(rows.length);
+    elx("salesTotal").textContent = String(total);
+  elx("salesCount").textContent = String(rows.length);
 
         renderMonthlyChartFromAllRows(getAllSalesRows(), year);
 }
@@ -743,7 +768,7 @@ function renderTable(rows) {
     tb.appendChild(tr);
   }
 
-  el("mgrMsg").textContent = `Total records: ${rows.length}`;
+  elx("mgrMsg").textContent = `Total records: ${rows.length}`;
 }
 
 function showModal(id, on) {
@@ -794,8 +819,8 @@ function openDetails(r) {
   const photoUrl = photoUrlOf(r);
   const sigUrl = URL.createObjectURL(new Blob([sigBytes], { type: "image/png" }));
 
-  el("detailPhoto").src = photoUrl;
-  el("detailSig").src = sigUrl;
+  elx("detailPhoto").src = photoUrl;
+  elx("detailSig").src = sigUrl;
 
   el("btnDownloadPhoto").onclick = async () => {
     if (r.photoBlob instanceof Blob) return downloadBlob(r.photoBlob, r.photoFile || "photo.jpg");
@@ -976,10 +1001,10 @@ function forceLock() {
     if (m) m.style.display = "none";
   }
 
-  if (el("pinMsg")) el("pinMsg").textContent = "";
+  if (el("pinMsg")) elx("pinMsg").textContent = "";
   if (el("pin")) {
-    el("pin").value = "";
-    try { el("pin").focus(); } catch (_) {}
+    elx("pin").value = "";
+    try { elx("pin").focus(); } catch (_) {}
   }
 }
 
@@ -1042,37 +1067,37 @@ function init() {
       // Always start locked
   forceLock();
 
-  el("btnUnlock").addEventListener("click", () => {
-    const pin = (el("pin").value || "").trim();
+  on("btnUnlock", "click", () => {
+    const pin = (elx("pin").value || "").trim();
     if (!unlockIfPinOk(pin)) {
-      el("pinMsg").textContent = "Wrong PIN";
-      el("pin").value = "";
-      el("pin").focus();
+      elx("pinMsg").textContent = "Wrong PIN";
+      elx("pin").value = "";
+      elx("pin").focus();
     }
   });
 
-  el("pin").addEventListener("keydown", (e) => {
+  on("pin", "keydown", (e) => {
     if (e.key === "Enter") el("btnUnlock").click();
   });
 
-    el("btnExportCsv").addEventListener("click", exportCsvOnly);
-    if (el("btnExportAll")) el("btnExportAll").addEventListener("click", exportZipAll);
+    on("btnExportCsv", "click", exportCsvOnly);
+    if (el("btnExportAll")) on("btnExportAll", "click", exportZipAll);
 
     // Tabs
-  el("tabWaiver").addEventListener("click", () => {
+  on("tabWaiver", "click", () => {
     window.location.href = "../";
   });
 
-  el("tabHistory").addEventListener("click", () => setSalesTab(false));
-  el("tabSales").addEventListener("click", () => setSalesTab(true));
-  el("tabHint").textContent = "History view";
+  on("tabHistory", "click", () => setSalesTab(false));
+  on("tabSales", "click", () => setSalesTab(true));
+  elx("tabHint").textContent = "History view";
 
   // Sales filters
-  el("btnSalesApply").addEventListener("click", renderSales);
-      el("btnSalesClear").addEventListener("click", () => {
-    el("salesYear").value = "";
-    el("salesDay").value = "";
-    el("salesMonth").value = "";
+  on("btnSalesApply", "click", renderSales);
+      on("btnSalesClear", "click", () => {
+    elx("salesYear").value = "";
+    elx("salesDay").value = "";
+    elx("salesMonth").value = "";
     if (el("salesFrom")) el("salesFrom").value = "";
     if (el("salesTo")) el("salesTo").value = "";
     renderSales();
@@ -1083,31 +1108,31 @@ function init() {
 
   // Legacy local price-editor buttons no longer exist (prices are edited in
   // the server section, shared by both parlors) — guards keep old markup safe.
-  if (el("btnPricesEdit")) el("btnPricesEdit").addEventListener("click", () => {
+  if (el("btnPricesEdit")) on("btnPricesEdit", "click", () => {
     if (!confirm("Unlock prices for editing?")) return;
     setPricesLocked(false);
     renderPriceEditor();
   });
 
-  if (el("btnPricesSaveLock")) el("btnPricesSaveLock").addEventListener("click", () => {
+  if (el("btnPricesSaveLock")) on("btnPricesSaveLock", "click", () => {
     if (!confirm("Save prices and lock? New prices apply starting today.")) return;
     saveAndLockPrices();
   });
 
   // Device parlor setting (inside the manager-gated device section)
   if (el("deviceSite") && window.TB) {
-    el("deviceSite").value = TB.deviceSite();
-    el("deviceSite").addEventListener("change", () => {
-      TB.setDeviceSite(el("deviceSite").value);
+    elx("deviceSite").value = TB.deviceSite();
+    on("deviceSite", "change", () => {
+      TB.setDeviceSite(elx("deviceSite").value);
       const m = el("deviceSiteMsg");
-      m.textContent = el("deviceSite").value
-        ? "Saved — new waivers from this device are stamped " + TB.siteLabel(el("deviceSite").value) + "."
+      m.textContent = elx("deviceSite").value
+        ? "Saved — new waivers from this device are stamped " + TB.siteLabel(elx("deviceSite").value) + "."
         : "Cleared — records default to Panacan.";
       m.style.color = "#0a7a2a";
     });
   }
 
-  el("btnClearAll").addEventListener("click", async () => {
+  on("btnClearAll", "click", async () => {
   if (!confirm("Clear all saved submissions on this iPad?")) return;
 
   // Keep a permanent sales snapshot before deleting records
@@ -1118,8 +1143,8 @@ function init() {
   alert("Saved data cleared");
 });
 
-  el("btnCloseDetail").addEventListener("click", () => showModal("detailModal", false));
-el("btnPrintDetail").addEventListener("click", () => {
+  on("btnCloseDetail", "click", () => showModal("detailModal", false));
+on("btnPrintDetail", "click", () => {
   // Scope the "hide everything else" print rule to THIS print job, so the
   // back-office document printing on the same page is unaffected.
   document.body.classList.add("print-detail");
@@ -1128,7 +1153,7 @@ el("btnPrintDetail").addEventListener("click", () => {
   window.print();
   setTimeout(done, 1000); // Safari does not always fire afterprint
 });
-el("btnBackToList").addEventListener("click", () => showModal("detailModal", false));
+on("btnBackToList", "click", () => showModal("detailModal", false));
 }
 
 init();

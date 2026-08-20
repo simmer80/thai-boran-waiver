@@ -229,3 +229,115 @@
 .sigActions .btn:disabled { opacity: 0.5; cursor: default; }
 .sigActions .btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
 @media print { .sigModal { display: none !important; } }
+
+/* ---- Main Office Daily Sales Report ------------------------------------ */
+/* A wide sheet: six repeating blocks of six fields. It keeps its natural
+   width and docfit scales it, the same as the other documents. */
+.doc[data-type="main-office-daily-sales"] { width: 1700px; }
+.doc.editing[data-type="main-office-daily-sales"] { width: 1900px; }
+.doc .docmeta {
+  display: flex; gap: 26px; flex-wrap: wrap; align-items: baseline;
+  font-size: 12px; margin: 10px 0 2px; padding-bottom: 6px;
+  border-bottom: 1px solid #000;
+}
+.doc .docmeta .formno { margin-left: auto; }
+.doc .docmeta .formval { display: inline-block; min-width: 140px; }
+.doc .docmeta input.dcell { display: inline-block; width: 140px; text-align: left; }
+.doc .cashier {
+  margin-top: 22px; width: 260px; text-align: center; font-size: 11px;
+}
+.doc .cashier .sigline { height: 30px; }
+
+/* ================= work areas: one role, one job, one step ============== */
+.boBar {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  background: #111827; color: #e5e7eb; border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 12px;
+}
+.boWhoName { font-weight: 700; font-size: 15px; }
+.boWhoRole { font-size: 12px; color: #9ca3af; }
+.boSite { display: flex; align-items: center; gap: 8px; }
+.boSite label { color: #9ca3af; margin: 0; font-size: 12px; }
+.boSite select { font-size: 15px; padding: 7px 10px; }
+.boBarActions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.boBar .btn { background: #1f2937; border-color: #374151; color: #e5e7eb; }
+.boBar .btn:hover { background: #374151; }
+.boBar a.btn { text-decoration: none; display: inline-block; }
+
+.boNav { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.boNavItem {
+  flex: 1 1 170px; text-align: left; cursor: pointer; position: relative;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+  padding: 12px 14px; min-height: 60px;
+  font-family: inherit; color: inherit;
+}
+.boNavItem .l { display: block; font-weight: 700; font-size: 15px; }
+.boNavItem .s { display: block; font-size: 12px; color: #667; margin-top: 2px; }
+.boNavItem.active { background: #111827; border-color: #111827; }
+.boNavItem.active .l { color: #fff; }
+.boNavItem.active .s { color: #cbd5e1; }
+.boNavItem:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.boBadge {
+  position: absolute; top: 8px; right: 10px; min-width: 22px; height: 22px;
+  border-radius: 999px; background: #dc2626; color: #fff;
+  font: 700 12px -apple-system, sans-serif; display: flex;
+  align-items: center; justify-content: center; padding: 0 6px;
+}
+.secHead { margin-bottom: 10px; }
+.secHead h2 { margin: 0 0 4px; }
+.nextStep {
+  display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; background: #f0f9ff; border-color: #bae6fd;
+}
+
+/* Sales figures at a glance */
+.statRow { display: flex; gap: 10px; flex-wrap: wrap; }
+.stat {
+  flex: 1 1 130px; background: #f8fafc; border: 1px solid #e5e7eb;
+  border-radius: 10px; padding: 10px 12px;
+}
+.statLabel { font-size: 12px; color: #667; }
+.statValue { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The photo switch: three choices, current one obvious */
+.photoState {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;
+  background: #f0fdf4; border: 1px solid #86efac;
+}
+.photoState.warn { background: #fffbeb; border-color: #fcd34d; }
+.photoState.err { background: #fef2f2; border-color: #fca5a5; }
+.photoBadge { font-weight: 800; font-size: 15px; }
+.photoSays { font-size: 13px; color: #374151; flex: 1 1 240px; }
+.photoChoices { display: flex; gap: 10px; flex-wrap: wrap; }
+.photoChoices .choice {
+  flex: 1 1 200px; text-align: left; cursor: pointer;
+  background: #fff; border: 1px solid #cfd5dc; border-radius: 12px;
+  padding: 12px 14px; min-height: 64px; font-family: inherit; color: inherit;
+}
+.photoChoices .choice .ct { display: block; font-weight: 700; font-size: 14px; }
+.photoChoices .choice .cs { display: block; font-size: 12px; color: #667; margin-top: 2px; }
+.photoChoices .choice.on { border-color: #111827; box-shadow: inset 0 0 0 2px #111827; }
+.photoChoices .choice:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+/* Idle lock warning */
+.idleWarn {
+  position: fixed; inset: 0; z-index: 950; display: flex;
+  align-items: center; justify-content: center; padding: 16px;
+  background: rgba(15, 23, 42, 0.6);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+.idleCard {
+  background: #fff; border-radius: 14px; padding: 22px; max-width: 420px; text-align: center;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.idleCard h2 { margin: 0 0 8px; font-size: 20px; }
+.idleCard p { color: #374151; font-size: 14px; }
+.idleCard .btn {
+  margin-top: 8px; padding: 12px 20px; font-size: 16px; cursor: pointer;
+  background: #111827; color: #fff; border: 1px solid #111827; border-radius: 10px;
+}
+
+@media (max-width: 700px) {
+  .boNavItem { flex-basis: 100%; }
+}

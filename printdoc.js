@@ -267,6 +267,102 @@
       ${footer(report, inputByOf(report), o)}`;
   }
 
+  // ------------------------------- 4. main office daily sales report
+  // One row per therapist, repeating blocks of one sale each. The blocks are
+  // wide, so on screen the sheet is simply wider and docfit scales it — the
+  // PDF is the one that breaks the blocks over two lines to fit A4.
+  const MO_BLOCKS = 6;
+  const MO_FIELDS = [
+    ['tom', 'TOM', 'text'],
+    ['hours', 'No. of hrs', 'money'],
+    ['addons', 'Add-ons', 'text'],
+    ['timeStart', 'Time start', 'text'],
+    ['timeEnd', 'Time end', 'text'],
+    ['totalPaid', 'Total paid', 'money'],
+  ];
+
+  function mainOfficeDailySales(report, cfg, logoSrc, o) {
+    const d = report.data;
+
+    let head = '<tr><th rowspan="2">Therapist</th>';
+    for (let i = 1; i <= MO_BLOCKS; i++) head += `<th colspan="${MO_FIELDS.length}">${i}</th>`;
+    head += '<th rowspan="2">TOTAL</th></tr><tr>';
+    for (let i = 1; i <= MO_BLOCKS; i++) for (const [, label] of MO_FIELDS) head += `<th>${label}</th>`;
+    head += '</tr>';
+
+    const body = d.rows.map((r) => {
+      const k = r.therapistId || r.therapistName;
+      const kA = `data-k="${escA(k)}"`;
+      const extra = round2((r.overflow || []).reduce((s2, b) => s2 + (Number(b.totalPaid) || 0), 0));
+      let tds = `<td class="name">${esc(r.therapistName)}</td>`;
+      for (let i = 0; i < MO_BLOCKS; i++) {
+        const b = r.blocks[i] || {};
+        const filled = !!(b.tom || b.addons || b.totalPaid || b.timeStart);
+        for (const [field, label, mode] of MO_FIELDS) {
+          if (o.edit) {
+            const sid = b.sessionId ? ` data-sid="${escA(b.sessionId)}"` : '';
+            const cls = 'ed' + (filled && !b.sessionId ? ' nosrc' : '');
+            const at = `${kA} data-i="${i}" data-f="${field}" data-e="mo"${sid}`;
+            const val = mode === 'money' ? raw(b[field]) : (b[field] || '');
+            tds += `<td class="${cls}">${cellInput(at, val, mode, label)}</td>`;
+          } else {
+            tds += `<td>${mode === 'money' ? money(b[field]) : esc(b[field] || '')}</td>`;
+          }
+        }
+      }
+      tds += `<td data-c="moRowTotal" ${kA} data-extra="${extra}"><b>${money0(r.rowTotal)}</b></td>`;
+      return `<tr>${tds}</tr>`;
+    }).join('');
+
+    // Subtotal per block column, printed under the grid.
+    let sub = '<tr class="tot"><td class="name">SUBTOTAL</td>';
+    for (let i = 0; i < MO_BLOCKS; i++) {
+      sub += `<td colspan="${MO_FIELDS.length - 1}"></td><td data-c="moBlock" data-i="${i}">${money(d.blockTotals[i])}</td>`;
+    }
+    sub += '<td data-c="moTotal">' + money0(d.totalSales) + '</td></tr>';
+
+    // The money summary, as the paper reads it.
+    const wide = MO_BLOCKS * MO_FIELDS.length;
+    const line = (label, value, attrs, cls) =>
+      `<tr class="${cls || ''}"><td class="name" colspan="${wide}">${label}</td>
+        <td colspan="2" ${attrs || ''}>${value}</td></tr>`;
+
+    const nonCashRows = d.nonCash.map((nc) => line(
+      `less ${esc(nc.label)}`,
+      o.edit
+        ? cellInput(`data-e="mononcash" data-m="${escA(nc.method)}"`, raw(nc.amount), 'money', nc.label)
+        : '(' + money0(nc.amount) + ')',
+      o.edit ? 'class="ed"' : ''
+    )).join('');
+
+    const summary = `
+      ${line('<b>TOTAL SALES FOR THE DAY</b>', '<b data-c="moTotal2">' + money0(d.totalSales) + '</b>', '', 'tot')}
+      ${nonCashRows}
+      ${line('<b>CASH ON HAND</b>', '<b data-c="moCash">' + money0(d.cashOnHand) + '</b>', '', 'tot')}`;
+
+    const formNo = o.edit
+      ? cellInput('data-e="moform"', d.formNumber || '', 'text', 'Form number')
+      : esc(d.formNumber || '');
+    const cashier = o.edit
+      ? cellInput('data-e="mocashier"', d.cashierOnDuty || '', 'text', 'Cashier on duty')
+      : `<b>${esc(d.cashierOnDuty || '')}</b>`;
+
+    return `${header(cfg, 'MAIN OFFICE DAILY SALES REPORT', '', logoSrc)}
+      <div class="docmeta">
+        <span><b>BRANCH:</b> ${esc(((cfg && cfg.header) || {}).branchName || '')}</span>
+        <span><b>DATE:</b> ${esc(d.date)}</span>
+        <span class="formno"><b>Form No.:</b> <span class="formval">${formNo}</span></span>
+      </div>
+      <table>${head}${body}${sub}${summary}</table>
+      <div class="cashier">
+        <div>Cashier on duty:</div>
+        <div class="sigline"></div>
+        <div class="signame${o.edit ? ' ed' : ''}">${cashier}</div>
+        <div>Signature over printed name</div>
+      </div>
+      ${footer(report, inputByOf(report), o)}`;
+  }
+
   // ------------------------------------------------------------------ render
   function render(type, report, cfg, logoSrc, opts) {
     const o = opts || {};
@@ -274,6 +370,7 @@
     if (type === 'daily-commission') inner = dailyCommission(report, cfg, logoSrc, o);
     else if (type === 'weekly-payroll') inner = weeklyPayroll(report, cfg, logoSrc, o);
     else if (type === 'weekly-sales') inner = weeklySales(report, cfg, logoSrc, o);
+    else if (type === 'main-office-daily-sales') inner = mainOfficeDailySales(report, cfg, logoSrc, o);
     else return '<div class="err">unknown document type</div>';
     return `<div class="doc${o.edit ? ' editing' : ''}" data-type="${escA(type)}">${inner}</div>`;
   }
@@ -287,6 +384,7 @@
     const b = el.querySelector('b');
     if (b) b.textContent = text; else el.textContent = text;
   };
+  const cssq = (v) => (window.CSS && CSS.escape ? CSS.escape(String(v == null ? "" : v)) : String(v == null ? "" : v));
   const q = (root, sel) => root.querySelector(sel);
   const qa = (root, sel) => Array.from(root.querySelectorAll(sel));
 
@@ -367,11 +465,42 @@
     setCell(q(root, 'td[data-c="tbpi"]'), money0(sum('bpi')));
   }
 
+  // Main office daily sales. Row totals, block subtotals, the day's total
+  // and cash on hand are SUMS of what is on the form — no value here is
+  // derived from another (correcting the hours never touches the money).
+  function recalcMainOffice(root) {
+    let day = 0;
+    qa(root, 'td[data-c="moRowTotal"]').forEach((td) => {
+      const k = td.dataset.k;
+      const sum = qa(root, 'input[data-e="mo"][data-f="totalPaid"][data-k="' + cssq(k) + '"]')
+        .reduce((s2, el) => s2 + num(el.value), 0) + num(td.dataset.extra);
+      setCell(td, money0(round2(sum)));
+      day += sum;
+    });
+    qa(root, 'td[data-c="moBlock"]').forEach((td) => {
+      const i = td.dataset.i;
+      const sum = qa(root, 'input[data-e="mo"][data-f="totalPaid"][data-i="' + cssq(i) + '"]')
+        .reduce((s2, el) => s2 + num(el.value), 0);
+      setCell(td, money(round2(sum)));
+    });
+    const total = round2(day);
+    setCell(q(root, 'td[data-c="moTotal"]'), money0(total));
+    const t2 = q(root, '[data-c="moTotal2"]');
+    if (t2) t2.textContent = money0(total);
+
+    const nonCash = qa(root, 'input[data-e="mononcash"]').length
+      ? qa(root, 'input[data-e="mononcash"]').reduce((s2, el) => s2 + num(el.value), 0)
+      : qa(root, 'td[data-c="moNonCash"]').reduce((s2, td) => s2 + num(td.textContent), 0);
+    const cash = q(root, '[data-c="moCash"]');
+    if (cash) cash.textContent = money0(round2(total - nonCash));
+  }
+
   function recalc(type, root) {
     if (!root) return;
     if (type === 'daily-commission') recalcCommission(root);
     else if (type === 'weekly-payroll') recalcPayroll(root);
     else if (type === 'weekly-sales') recalcSales(root);
+    else if (type === 'main-office-daily-sales') recalcMainOffice(root);
   }
 
   // ----------------------------------------------------------- validation
@@ -452,11 +581,32 @@
     return patch;
   }
 
+  function collectMainOffice(root) {
+    const patch = { rows: {} };
+    dirty(root, 'input[data-e="mo"]').forEach((el) => {
+      const rp = (patch.rows[el.dataset.k] = patch.rows[el.dataset.k] || { blocks: {} });
+      const bp = (rp.blocks[el.dataset.i] = rp.blocks[el.dataset.i] || {});
+      const f = el.dataset.f;
+      bp[f] = (f === 'hours' || f === 'totalPaid') ? num(el.value) : el.value.trim();
+      if (el.dataset.sid) bp.sessionId = el.dataset.sid;
+    });
+    dirty(root, 'input[data-e="mononcash"]').forEach((el) => {
+      patch.nonCash = patch.nonCash || {};
+      patch.nonCash[el.dataset.m] = String(el.value).trim() === '' ? null : num(el.value);
+    });
+    const form = q(root, 'input[data-e="moform"]');
+    if (form && form.dataset.dirty === '1') patch.formNumber = form.value.trim();
+    const cashier = q(root, 'input[data-e="mocashier"]');
+    if (cashier && cashier.dataset.dirty === '1') patch.cashierOnDuty = cashier.value.trim();
+    return patch;
+  }
+
   function collect(type, root) {
     let patch;
     if (type === 'daily-commission') patch = collectCommission(root);
     else if (type === 'weekly-payroll') patch = collectPayroll(root);
     else if (type === 'weekly-sales') patch = collectSales(root);
+    else if (type === 'main-office-daily-sales') patch = collectMainOffice(root);
     else patch = {};
     const by = q(root, 'input[data-e="inputby"]');
     if (by && by.dataset.dirty === '1') patch.rawDataInputBy = by.value.trim();

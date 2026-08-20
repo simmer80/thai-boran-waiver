@@ -15,18 +15,25 @@
   const cssq = (s) => (window.CSS && CSS.escape ? CSS.escape(String(s ?? '')) : String(s ?? '').replace(/["\\]/g, '\\$&'));
   const money0 = (n) => (Number(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // The four documents, named exactly as the office names them. "Sales
+  // Weekly Report" and "Main Office Daily Sales Report" are different sheets
+  // going to different places, so nothing anywhere shortens them to "sales".
   const TYPE_LABELS = {
-    'daily-commission': 'Daily Therapist Commission',
-    'weekly-payroll': 'Weekly Therapist Payroll',
-    'weekly-sales': 'Weekly Sales',
+    'daily-commission': 'Therapist Daily Commission Report',
+    'weekly-payroll': 'Therapist Weekly Commission Report',
+    'weekly-sales': 'Sales Weekly Report',
+    'main-office-daily-sales': 'Main Office Daily Sales Report',
   };
+  // Daily documents take any date; weekly ones snap to their Monday.
+  const DAILY_TYPES = ['daily-commission', 'main-office-daily-sales'];
 
   const state = {
     managerMode: false, mount: null, logoSrc: '../assets/thai_boran_logo.png',
     user: null, therapists: [], users: [], branchCfg: {},
     report: null, reportType: 'daily-commission', reportPeriod: '',
     editMode: false,     // editing the values IN the document template
-    archive: [], archiveDoc: null, archiveSigUrl: '', archiveSubSigUrl: '',
+    section: '',         // which step of the role's workflow is on screen
+
     liveSubSigUrl: '', liveSubSigKey: undefined,
     sessions: [], editingId: null,
     site: '',            // which parlor's data this screen shows
@@ -36,9 +43,10 @@
   const SITE_LABELS = { 'panacan': 'Panacan', 'airport-road': 'Airport Road' };
   const PDF_SITE = { 'panacan': 'Panacan', 'airport-road': 'AirportRoad' };
   const PDF_DOC = {
-    'daily-commission': 'Daily-Commission',
-    'weekly-payroll': 'Weekly-Payroll',
-    'weekly-sales': 'Weekly-Sales',
+    'daily-commission': 'Therapist-Daily-Commission-Report',
+    'weekly-payroll': 'Therapist-Weekly-Commission-Report',
+    'weekly-sales': 'Sales-Weekly-Report',
+    'main-office-daily-sales': 'Main-Office-Daily-Sales-Report',
   };
   const siteBadge = (site, big) =>
     `<span class="site-badge${big ? ' big' : ''}">Thai Boran — ${esc(SITE_LABELS[site] || site || '?')}</span>`;
@@ -226,100 +234,77 @@
     }
   }
 
+  // ------------------------------------------------------- the work areas
+  // Each role sees the steps of ITS OWN job, in order, one at a time —
+  // rather than every panel the app owns stacked on one page.
+  //
+  //   Front desk : Today -> Documents -> This device
+  //   Manager    : To approve -> Documents -> Admin
+  //
+  // Sales, history and the approved archive are deliberately NOT here: they
+  // live in the shared "Sales & history" area (records/), which both roles
+  // reach from the top navigation and which locks itself when left idle.
+  const SECTIONS = {
+    reception: [
+      { id: 'today', label: 'Today', sub: 'Check and correct the day' },
+      { id: 'documents', label: 'Documents', sub: 'Create, sign, submit' },
+      { id: 'device', label: 'This device', sub: 'Photo and local records' },
+    ],
+    manager: [
+      { id: 'approve', label: 'To approve', sub: 'Waiting for you' },
+      { id: 'documents', label: 'Documents', sub: 'View any document' },
+      { id: 'admin', label: 'Admin', sub: 'Prices, staff, users' },
+    ],
+  };
+
+  const sectionsFor = () => SECTIONS[state.managerMode ? 'manager' : 'reception'];
+
   function renderMain() {
     const mgr = state.managerMode;
+    const list = sectionsFor();
+    if (!list.some((x) => x.id === state.section)) state.section = list[0].id;
+
     state.mount.innerHTML = `
-      <div class="row noprint" style="justify-content:space-between;align-items:center;">
-        <div>Signed in as <b>${esc(state.user.name)}</b> <span class="muted">(${esc(state.user.role)}, ${esc(state.user.branch)})</span></div>
-        <div class="row">
-          <button id="boChangePw" class="btn">Change password</button>
+      <div class="boBar noprint">
+        <div class="boWho">
+          <div class="boWhoName">${esc(state.user.name)}</div>
+          <div class="boWhoRole">${esc(mgr ? 'Manager' : 'Front desk')} · ${esc(state.user.branch)}</div>
+        </div>
+        <div class="boSite">
+          ${mgr
+            ? `<label for="boSite">Parlor</label>
+               <select id="boSite">
+                 <option value="">— choose parlor —</option>
+                 ${Object.entries(SITE_LABELS).map(([id, l]) =>
+                   `<option value="${id}" ${state.site === id ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+               </select>`
+            : siteBadge(state.site, true)}
+        </div>
+        <div class="boBarActions">
+          <a class="btn" href="../records/">Sales &amp; history</a>
+          <button id="boChangePw" class="btn">Password</button>
           <button id="boLogout" class="btn">Sign out</button>
         </div>
       </div>
       <div id="boPwPanel" class="noprint"></div>
-      <div class="panel noprint" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <b>Parlor:</b>
-        ${mgr
-          ? `<select id="boSite" style="font-size:16px;padding:8px;">
-              <option value="">— choose parlor —</option>
-              ${Object.entries(SITE_LABELS).map(([id, l]) =>
-                `<option value="${id}" ${state.site === id ? 'selected' : ''}>Thai Boran — ${esc(l)}</option>`).join('')}
-             </select>`
-          : siteBadge(state.site, true)}
-        <span class="muted">${mgr
-          ? 'Sessions and documents below belong to the selected parlor. Tasks always show both parlors, each entry labelled.'
-          : 'This device belongs to this parlor; its waivers and documents are shown below.'}</span>
-      </div>
-      ${mgr ? '<div id="boTasks" class="panel noprint"><h2 style="margin-top:0">Tasks — awaiting approval <span class="muted" style="font-size:12px;">(both parlors)</span></h2><div id="boTasksBody" class="muted">Loading…</div></div>' : ''}
-      <div class="panel noprint">
-        <h2 style="margin-top:0">Sessions &amp; sales</h2>
-        <div class="row">
-          <div><label>From</label><input type="date" id="fFrom" value="${todayISO()}" /></div>
-          <div><label>To</label><input type="date" id="fTo" value="${todayISO()}" /></div>
-          <div><label>Receptionist</label><select id="fRec"><option value="">All</option>
-            ${state.users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select></div>
-          <div><label>Therapist</label><select id="fTher"><option value="">All</option>
-            ${state.therapists.map((t) => `<option value="${esc(t.id)}">${esc(t.fullName)}</option>`).join('')}</select></div>
-          <button id="fApply" class="btn primary">Apply</button>
-          <span id="fMsg" class="muted"></span>
-        </div>
-        <div class="tableWrap" style="margin-top:10px;">
-          <table><thead><tr>
-            <th>Date</th><th>Time</th><th>Customer</th><th>Therapist</th><th>Service</th>
-            <th>Add-Ons</th><th>Stub #</th><th>Hrs</th><th>Pay</th>
-            <th class="num">Net</th><th class="num">Comm.</th><th>By</th><th></th>
-          </tr></thead><tbody id="sessRows"></tbody>
-          <tfoot><tr id="sessTotals"></tr></tfoot></table>
-        </div>
-        <div id="sessEdit"></div>
-      </div>
-      <div class="panel">
-        <h2 style="margin-top:0" class="noprint">Documents</h2>
-        <div class="row noprint">
-          <div><label>Document</label><select id="rType">
-            ${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
-          </select></div>
-          <div><label>Date (weekly documents use that day's week, Mon–Sun)</label><input type="date" id="rPeriod" value="${todayISO()}" /></div>
-          <button id="rGen" class="btn primary" title="Builds the document from the session records. Manual values you saved are kept.">Create / refresh from records</button>
-          <button id="rLoad" class="btn" title="Opens the last saved version without recalculating.">Open saved</button>
-          <span id="rMsg" class="muted" role="status"></span>
-        </div>
-        <div id="rStatus" class="noprint" style="margin-top:8px;"></div>
-        <div id="rActions" class="row noprint" style="margin-top:8px;"></div>
-        <div id="rManual" class="noprint" style="margin-top:10px;"></div>
-        <div id="rDoc" style="margin-top:12px;">
-          <div class="muted">Choose a document and a date above, then press
-          “Create / refresh from records”. The document appears here for review,
-          editing, printing and submission.</div>
-        </div>
-      </div>
-      <div class="panel noprint" id="boArchive">
-        <h2 style="margin-top:0">Approved documents
-          <span class="muted" style="font-size:12px;">(the signed copies, straight from this device — no Google Drive needed)</span></h2>
-        <div class="row">
-          ${mgr ? '' : siteBadge(state.site, true)}
-          <div><label for="arType">Document</label><select id="arType">
-            <option value="">All documents</option>
-            ${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
-          </select></div>
-          <div><label for="arFrom">Period from</label><input type="date" id="arFrom" /></div>
-          <div><label for="arTo">Period to</label><input type="date" id="arTo" /></div>
-          <button id="arApply" class="btn primary">Show</button>
-          <span id="arMsg" class="muted" role="status"></span>
-        </div>
-        <div id="arList" style="margin-top:10px;"></div>
-        <div id="arView" style="margin-top:12px;"></div>
-      </div>
-      ${mgr ? `
-      <div class="panel noprint"><h2 style="margin-top:0">Prices <span class="muted" style="font-size:12px;">(shared — both parlors charge the same)</span></h2>
-        <div id="pricesBody" class="muted">Loading…</div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">Therapists <span class="muted" style="font-size:12px;">(shared — staff rotate between parlors)</span></h2>
-        <div id="thBody"></div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">Users &amp; passwords</h2>
-        <div id="usersBody"></div></div>
-      <div class="panel noprint"><h2 style="margin-top:0">Google Drive mirror</h2>
-        <div id="driveBody" class="muted">Loading…</div></div>` : ''}
-    `;
+      <nav class="boNav noprint" role="tablist">
+        ${list.map((x) => `
+          <button role="tab" class="boNavItem${x.id === state.section ? ' active' : ''}" data-sec="${x.id}"
+            aria-selected="${x.id === state.section}">
+            <span class="l">${esc(x.label)}</span><span class="s">${esc(x.sub)}</span>
+            ${x.id === 'approve' ? '<span class="boBadge" id="boTaskCount" hidden></span>' : ''}
+          </button>`).join('')}
+      </nav>
+      <div id="boSection"></div>`;
+
+    state.mount.querySelectorAll('.boNavItem').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (!confirmDiscard()) return;
+        state.editMode = false;
+        state.section = b.dataset.sec;
+        renderMain();
+      }));
+
     if (mgr) {
       $('#boSite').addEventListener('change', async () => {
         state.site = $('#boSite').value;
@@ -330,17 +315,6 @@
         renderMain();
       });
     }
-
-    $('#rGen').addEventListener('click', () => busy($('#rGen'), 'Working…', async () => {
-      if (!confirmDiscard()) return;
-      state.editMode = false;
-      return loadReport(true);
-    }));
-    $('#rLoad').addEventListener('click', () => busy($('#rLoad'), 'Opening…', async () => {
-      if (!confirmDiscard()) return;
-      state.editMode = false;
-      return loadReport(false);
-    }));
     $('#boLogout').addEventListener('click', async () => { await TB.logout(); state.user = null; render(); });
     $('#boChangePw').addEventListener('click', () => {
       const p = $('#boPwPanel');
@@ -355,24 +329,182 @@
       }));
       $('#pwCur').focus();
     });
-    $('#fApply').addEventListener('click', loadSessions);
-    $('#arApply').addEventListener('click', () => busy($('#arApply'), 'Loading…', loadArchive));
-    if (state.site) {
-      loadSessions();
-      loadArchive();
-    } else {
-      $('#fMsg').textContent = '';
-      $('#sessRows').innerHTML = '<tr><td colspan="13" class="muted">Choose a parlor above to see its sessions and documents.</td></tr>';
-      $('#rMsg').textContent = 'Choose a parlor above first.';
-      $('#arList').innerHTML = '<span class="muted">Choose a parlor above to see its approved documents.</span>';
-    }
-    if (mgr) { loadTasks(); renderPricesAdmin(); renderTherapists(); renderUsersAdmin(); loadDrive(); }
+
+    renderSection();
+    if (mgr) loadTasks();   // keeps the "waiting for you" badge current
 
     // Tell the page a server-verified user is present: the local device
-    // sections (reception settings / manager device history) unlock off this
-    // instead of asking for their legacy PINs.
+    // sections unlock off this instead of asking for their legacy PINs.
     document.dispatchEvent(new CustomEvent('tb:authed', { detail: { ...state.user } }));
   }
+
+  const needSite = (what) =>
+    `<div class="panel"><div class="muted">Choose a parlor at the top to see ${what}.</div></div>`;
+
+  function renderSection() {
+    const host = $('#boSection');
+    const mgr = state.managerMode;
+    if (state.section === 'today') return renderToday(host);
+    if (state.section === 'documents') return renderDocuments(host);
+    if (state.section === 'device') return renderDeviceSection(host);
+    if (state.section === 'approve') return renderApproveSection(host);
+    if (state.section === 'admin') return renderAdminSection(host);
+    host.innerHTML = '';
+  }
+
+  // ---------------------------------------------------------------- today
+  // The receptionist's first screen: what happened today, ready to correct.
+  function renderToday(host) {
+    if (!state.site) { host.innerHTML = needSite('the day'); return; }
+    host.innerHTML = `
+      <div class="panel">
+        <div class="secHead">
+          <h2>Today at a glance</h2>
+          <div class="muted">Every waiver that synced. Tap <b>Edit</b> on a line to fix
+            the therapist, hours, stub number, add-ons or how it was paid — the
+            correction updates the record itself, so the documents you make
+            afterwards already have it.</div>
+        </div>
+        <div class="row">
+          <div><label for="fFrom">From</label><input type="date" id="fFrom" value="${todayISO()}" /></div>
+          <div><label for="fTo">To</label><input type="date" id="fTo" value="${todayISO()}" /></div>
+          <div><label for="fRec">Receptionist</label><select id="fRec"><option value="">All</option>
+            ${state.users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select></div>
+          <div><label for="fTher">Therapist</label><select id="fTher"><option value="">All</option>
+            ${state.therapists.map((t) => `<option value="${esc(t.id)}">${esc(t.fullName)}</option>`).join('')}</select></div>
+          <button id="fApply" class="btn primary">Show</button>
+          <span id="fMsg" class="muted" role="status"></span>
+        </div>
+        <div class="tableWrap" style="margin-top:10px;">
+          <table><thead><tr>
+            <th>Date</th><th>Time</th><th>Customer</th><th>Therapist</th><th>Service</th>
+            <th>Add-Ons</th><th>Stub #</th><th>Hrs</th><th>Paid by</th>
+            <th class="num">Net</th><th class="num">Comm.</th><th>By</th><th></th>
+          </tr></thead><tbody id="sessRows"></tbody>
+          <tfoot><tr id="sessTotals"></tr></tfoot></table>
+        </div>
+        <div id="sessEdit"></div>
+      </div>
+      <div class="panel nextStep noprint">
+        <div>Sessions look right?</div>
+        <button id="toDocs" class="btn primary">Make today’s documents →</button>
+      </div>`;
+    $('#fApply').addEventListener('click', loadSessions);
+    $('#toDocs').addEventListener('click', () => { state.section = 'documents'; renderMain(); });
+    loadSessions();
+  }
+
+  // ------------------------------------------------------------ documents
+  // The receptionist creates; the manager only looks. Same viewer either way.
+  function renderDocuments(host) {
+    const mgr = state.managerMode;
+    if (!state.site) { host.innerHTML = needSite('its documents'); return; }
+    host.innerHTML = `
+      <div class="panel noprint">
+        <div class="secHead">
+          <h2>${mgr ? 'View a document' : 'The day’s documents'}</h2>
+          <div class="muted">${mgr
+            ? 'Open any document for this parlor and period, exactly as it stands. Documents are created and corrected at the front desk.'
+            : 'Build it from the records, correct anything that needs it, sign, and send it to the manager.'}</div>
+        </div>
+        <div class="row">
+          <div><label for="rType">Document</label><select id="rType">
+            ${Object.entries(TYPE_LABELS).map(([k, v]) =>
+              `<option value="${k}" ${state.reportType === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          </select></div>
+          <div><label for="rPeriod">Date <span class="muted">(weekly documents use that day’s week)</span></label>
+            <input type="date" id="rPeriod" value="${esc(state.reportPeriod || todayISO())}" /></div>
+          ${mgr ? '' : '<button id="rGen" class="btn primary" title="Builds the document from the session records. Corrections you saved are kept.">Create / refresh from records</button>'}
+          <button id="rLoad" class="btn">Open saved</button>
+          <span id="rMsg" class="muted" role="status"></span>
+        </div>
+        <div id="rStatus" style="margin-top:8px;"></div>
+        <div id="rActions" class="row" style="margin-top:8px;"></div>
+      </div>
+      <div id="rManual" class="noprint"></div>
+      <div class="panel">
+        <div id="rDoc">
+          <div class="muted">${mgr
+            ? 'Choose a document and a date, then press “Open saved”.'
+            : 'Choose a document and a date, then press “Create / refresh from records”.'}</div>
+        </div>
+      </div>`;
+
+    if ($('#rGen')) {
+      $('#rGen').addEventListener('click', () => busy($('#rGen'), 'Working…', async () => {
+        if (!confirmDiscard()) return;
+        state.editMode = false;
+        return loadReport(true);
+      }));
+    }
+    $('#rLoad').addEventListener('click', () => busy($('#rLoad'), 'Opening…', async () => {
+      if (!confirmDiscard()) return;
+      state.editMode = false;
+      return loadReport(false);
+    }));
+    if (state.report) renderReport();
+  }
+
+  // --------------------------------------------------------- to approve
+  function renderApproveSection(host) {
+    host.innerHTML = `
+      <div class="panel">
+        <div class="secHead">
+          <h2>Waiting for your approval</h2>
+          <div class="muted">Both parlors. Opening one takes you to the document,
+            signed by the receptionist, ready to read and approve.</div>
+        </div>
+        <div id="boTasksBody" class="muted">Loading…</div>
+      </div>`;
+    loadTasks();
+  }
+
+  // -------------------------------------------------------------- admin
+  function renderAdminSection(host) {
+    host.innerHTML = `
+      <div class="panel noprint"><h2 style="margin-top:0">Prices
+        <span class="muted" style="font-size:12px;">(shared — both parlors charge the same)</span></h2>
+        <div id="pricesBody" class="muted">Loading…</div></div>
+      <div class="panel noprint"><h2 style="margin-top:0">Therapists
+        <span class="muted" style="font-size:12px;">(shared — staff rotate between parlors)</span></h2>
+        <div id="thBody"></div></div>
+      <div class="panel noprint"><h2 style="margin-top:0">Users &amp; passwords</h2>
+        <div id="usersBody"></div></div>
+      <div class="panel noprint"><h2 style="margin-top:0">Google Drive mirror</h2>
+        <div id="driveBody" class="muted">Loading…</div></div>`;
+    renderPricesAdmin();
+    renderTherapists();
+    renderUsersAdmin();
+    loadDrive();
+  }
+
+  // -------------------------------------------------------- this device
+  // Two separate things that used to share one box: what the WAIVER FORM
+  // does on this iPad, and the records this iPad captured.
+  function renderDeviceSection(host) {
+    host.innerHTML = `
+      <div class="panel" id="devicePhoto">
+        <div class="secHead">
+          <h2>Client photo</h2>
+          <div class="muted">Controls the photo step on the Waiver Form tab of this iPad.</div>
+        </div>
+        <div id="photoBox"></div>
+      </div>
+      <div class="panel" id="deviceRecords">
+        <div class="secHead">
+          <h2>Local records on this iPad</h2>
+          <div class="muted">Waivers captured here. You can add add-ons a client asked
+            for mid-session; the price, the hours and the day’s totals follow automatically.</div>
+        </div>
+        <div id="localPanels"></div>
+        <div class="row" style="margin-top:8px;">
+          <button id="btnEditRecords" class="btn primary">Show local records</button>
+          <span id="localMsg" class="muted" role="status"></span>
+        </div>
+      </div>`;
+    document.dispatchEvent(new CustomEvent('tb:device-section', { detail: {} }));
+  }
+
 
   // Manager: reset a receptionist's password (forgot-password flow — the
   // temporary password is shown ONCE here for the manager to hand over).
@@ -419,7 +551,7 @@
 
   // -------------------------------------------------------------- sessions
   async function loadSessions() {
-    if (!state.site) return;
+    if (!state.site || !$('#sessRows')) return;   // not on this step
     $('#fMsg').textContent = 'Loading…';
     try {
       const q = new URLSearchParams({
@@ -535,7 +667,7 @@
 
   // --------------------------------------------------------------- reports
   function periodFor(type, anyDate) {
-    return type === 'daily-commission' ? anyDate : mondayOf(anyDate);
+    return DAILY_TYPES.includes(type) ? anyDate : mondayOf(anyDate);
   }
 
   async function loadReport(generate) {
@@ -569,11 +701,13 @@
       ${r.submittedByName ? ` · submitted by ${esc(r.submittedByName)}` : ''}
       ${r.approvedByName ? ` · approved by ${esc(r.approvedByName)} at ${esc(r.approvedAt)}` : ''}`;
 
-    const editable = r.status !== 'approved';
+    // Documents are created and corrected at the front desk. The manager
+    // reads and approves — never edits someone else's figures.
+    const editable = r.status !== 'approved' && !state.managerMode;
     const acts = [];
     if (editable) {
       acts.push(`<button id="aEdit" class="btn ${state.editMode ? '' : 'primary'}">${
-        state.editMode ? 'Stop editing' : '✎ Edit values on the document'}</button>`);
+        state.editMode ? 'Stop correcting' : '✎ Correct values on the document'}</button>`);
     }
     acts.push('<button id="aPdf" class="btn">Export PDF</button>');
     acts.push('<button id="aPrint" class="btn">Print</button>');
@@ -629,7 +763,7 @@
         state.report = (await TB.api(`/api/reports/${r.type}/${r.period}/approve?` + siteQ(), { method: 'POST' })).report;
         renderReport();
         loadTasks();
-        loadArchive();  // the signed copy is now in the archive below
+        // the signed copy now shows up under Sales & history
         const m = $('#rMsg'); m.className = 'ok'; m.textContent = 'Approved ✓ — signed and archived';
         const mine475 = m.textContent; setTimeout(() => { if (m.isConnected && m.textContent === mine475) { m.className = 'muted'; m.textContent = ''; } }, 5000);
       } catch (e) { alert('Approve failed: ' + e.message); }
@@ -643,13 +777,23 @@
   // the server calculates (gross, deductions total, net pay, row and grand
   // totals) stay read-only and are recomputed live as the cells are typed in,
   // so the form always adds up on screen.
+  // Editing a document is a CORRECTION, never a recalculation. Typing 2 in
+  // the hours box changes the hours and nothing else — the commission beside
+  // it is a separate fact and stays exactly as it is. Only the totals move,
+  // because a total is the sum of what is on the form. Figures are worked
+  // out from the records ONLY when the document is created or refreshed.
+  const CORRECTION_ONLY =
+    'Corrections only — nothing else is recalculated from what you type. ' +
+    'Only the totals re-add. To recompute from the records, use “Create / refresh from records”.';
   const EDIT_HINTS = {
     'daily-commission':
-      'Type hours, stub number and commission straight into the block they belong to. Row totals and the grand total follow along.',
+      'Type hours, stub number and commission straight into the block they belong to.',
     'weekly-payroll':
-      'Day cells take an amount; the small button beside one cycles it to RD (rest day) or A (absent). An empty deduction or NH box means it is not applied this week. Gross, total deductions, net pay and the totals row are calculated.',
+      'Day cells take an amount; the small button beside one cycles it to RD (rest day) or A (absent). An empty deduction or NH box means it is not applied this week.',
     'weekly-sales':
-      'Type a corrected figure over any day. Clearing a box hands that day back to the automatic value from the records. The totals row is calculated.',
+      'Type a corrected figure over any day. Clearing a box hands that day back to the automatic value from the records.',
+    'main-office-daily-sales':
+      'Correct any cell of the sheet: the massage, the hours, the add-ons, the times, what was paid. The form number and the cashier on duty are here too.',
   };
 
   function docRoot() {
@@ -713,13 +857,18 @@
       return;
     }
     if (!state.editMode) {
-      host.innerHTML = `<div class="muted">Press <b>✎ Edit values on the document</b> to correct values
-        directly in their own boxes on the form below.</div>`;
+      if (state.managerMode) {
+        host.innerHTML = '<div class="muted">Documents are created and corrected at the front desk. You are reading this one as it stands.</div>';
+        return;
+      }
+      host.innerHTML = `<div class="muted">Press <b>✎ Correct values on the document</b> to fix
+        anything wrong, directly in its own box on the form below. ${esc(CORRECTION_ONLY)}</div>`;
       return;
     }
     host.innerHTML = `<div class="docEditBar" id="edBar">
-      <b>Editing this document</b>
-      <span class="muted" style="flex:1 1 260px;">${esc(EDIT_HINTS[r.type] || '')}</span>
+      <b>Correcting this document</b>
+      <span class="muted" style="flex:1 1 260px;">${esc(EDIT_HINTS[r.type] || '')}
+        <b>${esc(CORRECTION_ONLY)}</b></span>
       <span id="edMsg" role="status"></span>
       <button id="edCancel" class="btn">Cancel</button>
       <button id="edSave" class="btn primary">Save changes</button>
@@ -810,153 +959,20 @@
     }
   }
 
-  // --------------------------------------------------- approved documents
-  // The in-app archive of signed copies, in BOTH tabs. Everything shown here
-  // is read back from the immutable <period>.approved.v<N>.json snapshot the
-  // server wrote at approval time — never recomputed from live records — so
-  // an archived document always matches the paper that was signed. The PDF
-  // button renders that same snapshot, which is what goes to head office.
-  function pdfName(type, period, version) {
-    return `ThaiBoran-${PDF_SITE[state.site] || state.site}_${PDF_DOC[type]}_${period}_approved_v${version}.pdf`;
-  }
-
-  async function downloadBlob(getBlob, filename) {
-    const blob = await getBlob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  }
-
-  async function loadArchive() {
-    if (!state.site) return;
-    const msg = $('#arMsg');
-    msg.className = 'muted'; msg.textContent = 'Loading…';
-    const q = new URLSearchParams({ site: state.site });
-    if ($('#arType').value) q.set('type', $('#arType').value);
-    if ($('#arFrom').value) q.set('from', $('#arFrom').value);
-    if ($('#arTo').value) q.set('to', $('#arTo').value);
-    try {
-      const out = await TB.api('/api/approved?' + q.toString());
-      state.archive = out.documents;
-      msg.textContent = out.total
-        ? `${out.total} approved document(s)${out.truncated ? ` — showing the ${out.documents.length} most recent` : ''}`
-        : '';
-      $('#arList').innerHTML = out.documents.length
-        ? `<div class="tableWrap"><table>
-            <thead><tr><th>Parlor</th><th>Document</th><th>Period</th><th>Ver.</th>
-              <th>Approved</th><th>Approved by</th><th>Raw data input by</th><th></th></tr></thead>
-            <tbody>${out.documents.map((d) => `<tr>
-              <td>${siteBadge(d.site)}</td>
-              <td>${esc(TYPE_LABELS[d.type] || d.type)}</td>
-              <td>${esc(d.period)}</td>
-              <td>${esc(String(d.version))}</td>
-              <td>${esc((d.approvedAt || '').slice(0, 10))}</td>
-              <td>${esc(d.approvedByName)}${d.hasSignature ? ' <span title="Signed copy">✍</span>' : ''}</td>
-              <td>${esc(d.rawDataInputBy)}</td>
-              <td class="row" style="gap:6px;">
-                <button class="btn primary arOpen" data-t="${esc(d.type)}" data-p="${esc(d.period)}" data-v="${d.version}">Open</button>
-                <button class="btn arPdf" data-t="${esc(d.type)}" data-p="${esc(d.period)}" data-v="${d.version}">PDF</button>
-              </td></tr>`).join('')}</tbody></table></div>`
-        : `<span class="muted">No approved documents${$('#arType').value || $('#arFrom').value || $('#arTo').value
-            ? ' match these filters' : ' for this parlor yet'}. A document appears here as soon as the manager approves it.</span>`;
-
-      $('#arList').querySelectorAll('.arOpen').forEach((b) =>
-        b.addEventListener('click', () => busy(b, 'Opening…', () => openApproved(b.dataset.t, b.dataset.p, b.dataset.v))));
-      $('#arList').querySelectorAll('.arPdf').forEach((b) =>
-        b.addEventListener('click', () => busy(b, '…', async () => {
-          try {
-            await downloadBlob(
-              () => TB.api(`/api/approved/${b.dataset.t}/${b.dataset.p}/${b.dataset.v}/pdf?` + siteQ()),
-              pdfName(b.dataset.t, b.dataset.p, b.dataset.v)
-            );
-          } catch (e) { alert('PDF failed: ' + e.message); }
-        })));
-    } catch (e) {
-      msg.className = 'err';
-      msg.textContent = e.unauthorized ? 'Session expired — sign in again' : e.message;
-      if (e.unauthorized) { state.user = null; render(); }
-    }
-  }
-
-  function releaseSignature() {
-    for (const k of ['archiveSigUrl', 'archiveSubSigUrl']) {
-      if (state[k]) { URL.revokeObjectURL(state[k]); state[k] = ''; }
-    }
-  }
-
-  async function openApproved(type, period, version) {
-    const host = $('#arView');
-    host.innerHTML = '<div class="muted">Opening the signed copy…</div>';
-    try {
-      const rep = (await TB.api(`/api/approved/${type}/${period}/${version}?` + siteQ())).report;
-      releaseSignature();
-      // Both stored signatures, so the on-screen copy carries exactly what
-      // the PDF does: the receptionist who submitted it and the manager who
-      // approved it, each over their own printed name.
-      const sigUrl = async (who) => {
-        try {
-          const path = `/api/approved/${type}/${period}/${version}/signature${who ? '/' + who : ''}?`;
-          return URL.createObjectURL(await TB.api(path + siteQ()));
-        } catch (_) { return ''; }   // missing signature never blocks the copy
-      };
-      if (rep.approverSignaturePath) state.archiveSigUrl = await sigUrl('');
-      if (rep.submitterSignaturePath) state.archiveSubSigUrl = await sigUrl('submitter');
-      state.archiveDoc = rep;
-      host.innerHTML = `
-        <div class="row noprint" style="justify-content:space-between;align-items:center;">
-          <div>${siteBadge(state.site, true)} <b>${esc(TYPE_LABELS[type] || type)}</b> — ${esc(period)} —
-            version ${esc(String(version))} <span class="status-approved">APPROVED</span>
-            ${rep.approvedByName ? ` · signed by ${esc(rep.approvedByName)} on ${esc((rep.approvedAt || '').slice(0, 10))}` : ''}</div>
-          <div class="row">
-            <button id="arDocPdf" class="btn">Export PDF</button>
-            <button id="arDocPrint" class="btn">Print</button>
-            <button id="arDocClose" class="btn">Close</button>
-          </div>
-        </div>
-        <div class="muted noprint" style="margin:6px 0;">This is the permanent copy saved when it was approved —
-          it can never be edited. A later correction becomes a new version and leaves this one untouched.</div>
-        <div id="arDoc" style="margin-top:8px;"></div>`;
-      $('#arDoc').innerHTML = TBDoc.render(
-        type, rep, rep.branchConfigSnapshot || state.branchCfg, state.logoSrc,
-        { signatureUrl: state.archiveSigUrl, submitterSignatureUrl: state.archiveSubSigUrl }
-      );
-      TBFit.attach($('#arDoc'), { refit: true });
-
-      $('#arDocPdf').addEventListener('click', () => busy($('#arDocPdf'), 'Preparing PDF…', async () => {
-        try {
-          await downloadBlob(
-            () => TB.api(`/api/approved/${type}/${period}/${version}/pdf?` + siteQ()),
-            pdfName(type, period, version)
-          );
-        } catch (e) { alert('PDF failed: ' + e.message); }
-      }));
-      // Printing an archived copy hides the rest of the page for that one job.
-      $('#arDocPrint').addEventListener('click', () => {
-        document.body.classList.add('print-archive');
-        const done = () => document.body.classList.remove('print-archive');
-        window.addEventListener('afterprint', done, { once: true });
-        window.print();
-        setTimeout(done, 1000); // Safari does not always fire afterprint
-      });
-      $('#arDocClose').addEventListener('click', () => {
-        releaseSignature();
-        state.archiveDoc = null;
-        host.innerHTML = '';
-      });
-      host.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (e) {
-      host.innerHTML = `<span class="err">${esc(e.message)}</span>`;
-    }
-  }
-
   // ------------------------------------------------------- manager extras
   async function loadTasks() {
     if (!state.managerMode) return;
     try {
       const out = await TB.api('/api/tasks');
-      $('#boTasksBody').innerHTML = out.tasks.length
+      // The count rides on the nav whether or not the list is on screen.
+      const badge = $('#boTaskCount');
+      if (badge) {
+        badge.textContent = String(out.tasks.length);
+        badge.hidden = out.tasks.length === 0;
+      }
+      const body = $('#boTasksBody');
+      if (!body) return;
+      body.innerHTML = out.tasks.length
         ? `<table><thead><tr><th>Parlor</th><th>Document</th><th>Period</th><th>Submitted by</th><th>When</th><th></th></tr></thead><tbody>
           ${out.tasks.map((t) => `<tr>
             <td>${siteBadge(t.site)}</td>
@@ -965,20 +981,24 @@
             <td><button class="btn primary boOpenTask" data-site="${esc(t.site)}" data-type="${esc(t.type)}" data-period="${esc(t.period)}">Review</button></td>
           </tr>`).join('')}</tbody></table>`
         : '<span class="ok">Nothing waiting for approval at either parlor.</span>';
-      $('#boTasksBody').querySelectorAll('.boOpenTask').forEach((b) =>
+      body.querySelectorAll('.boOpenTask').forEach((b) =>
         b.addEventListener('click', async () => {
           state.site = b.dataset.site;                 // review in that parlor's context
           if ($('#boSite')) $('#boSite').value = state.site;
           // the document header must show THAT parlor's address block
           try { state.branchCfg = (await TB.api('/api/branch-config?' + siteQ())).config || {}; } catch (_) {}
+          state.reportType = b.dataset.type;
+          state.reportPeriod = b.dataset.period;
+          state.section = 'documents';
+          renderMain();                       // the viewer lives in that step
           $('#rType').value = b.dataset.type;
           $('#rPeriod').value = b.dataset.period;
-          loadReport(false);
-          loadSessions();
-          $('#rDoc').scrollIntoView({ behavior: 'smooth' });
+          await loadReport(false);
+          $('#rDoc').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }));
     } catch (e) {
-      $('#boTasksBody').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+      const body = $('#boTasksBody');
+      if (body) body.innerHTML = `<span class="err">${esc(e.message)}</span>`;
     }
   }
 
@@ -1393,6 +1413,10 @@
       const ok = await connectToServer();
       if (!ok) { renderConnectFailed(); return; }
       state.user = await TB.me();
+      // Sessions and client names are on these screens, and the iPad sits on
+      // a counter facing clients: lock back to the waiver tab when it is
+      // left alone, and make coming back need the password again.
+      if (state.user && window.TBIdleLock) TBIdleLock.start({ waiverUrl: "../index.html" });
       if (state.user && !state.user.mustChangePassword) {
         try { await loadBasics(); } catch (_) {}
       }
