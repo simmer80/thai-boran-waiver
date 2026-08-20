@@ -217,9 +217,7 @@ const state = {
   photoBlob: null,
   photoTaken: false,
   sigDirty: false,
-  addonsChecked: new Array(ADD_ONS.length).fill(false),
-  camFacing: 'user',
-  stream: null
+  addonsChecked: new Array(ADD_ONS.length).fill(false)
 };
 
 // An update must never throw away a waiver that is part-way through. The
@@ -326,15 +324,30 @@ function parseAddonsList(text) {
   return t.split(/[;,]/).map(s => s.trim()).filter(Boolean);
 }
 
+// SENIOR/PWD — the two rules, mirrored from the server (src/pricing.js).
+// Both look like bugs and are not; a parity test compares this function
+// against the server’s over every combination, so they cannot drift.
+//
+// 1. NO VAT DIVISOR — Thai Boran is not VAT-registered (percentage tax),
+//    so the 20% is taken on the price as charged.
+// 2. Only the eligible SERVICE is discounted: never a Combo, and never an
+//    add-on, whether chosen at the start or added mid-service. Which
+//    services qualify comes from the price list, not from this file.
+function isSeniorEligibleService(set, serviceName) {
+  const map = set && set.seniorEligible;
+  if (!map || typeof map !== 'object') return true;      // set predates the flag
+  return !!map[String(serviceName || '').trim()];
+}
+
 function computePricing(dateStr, serviceName, addonsText, isSenior) {
   const set = pickPriceSetForDate(dateStr);
   const servicePrice = Number(set?.services?.[String(serviceName || '').trim()] ?? 0) || 0;
   let addonsPrice = 0;
   for (const a of parseAddonsList(addonsText)) addonsPrice += (Number(set?.addons?.[a] ?? 0) || 0);
   const gross = servicePrice + addonsPrice;
-  const discount = isSenior ? Math.round(gross * SENIOR_PWD_DISCOUNT_RATE) : 0;
-  const net = gross - discount;
-  return { servicePrice, addonsPrice, gross, discount, net };
+  const eligibleBase = isSenior && isSeniorEligibleService(set, serviceName) ? servicePrice : 0;
+  const discount = Math.round(eligibleBase * SENIOR_PWD_DISCOUNT_RATE);
+  return { servicePrice, addonsPrice, gross, discountBase: eligibleBase, discount, net: gross - discount };
 }
 
 function isSeniorSelected() {
@@ -348,9 +361,15 @@ function updateTotalPreview() {
   const box = el('totalPreview');
   if (!box) return;
   const p = computePricing(el('date').value, el('services').value, selectedAddonsText(), isSeniorSelected());
-  box.textContent = isSeniorSelected()
-    ? `Total: gross ${pesos(p.gross)} − 20% Senior/PWD (${pesos(p.discount)}) = ${pesos(p.net)}`
-    : `Total: ${pesos(p.net)}`;
+  if (!isSeniorSelected()) { box.textContent = `Total: ${pesos(p.net)}`; return; }
+  // Spell out the BASE. With a senior client and an add-on the discount is
+  // deliberately not 20% of the total, and the receptionist has to be able
+  // to answer the client who asks why.
+  box.textContent = p.discount > 0
+    ? `Total: gross ${pesos(p.gross)} − 20% Senior/PWD on the ${pesos(p.discountBase)} massage `
+      + `(${pesos(p.discount)}) = ${pesos(p.net)}`
+    : `Total: ${pesos(p.net)} — no Senior/PWD discount: it applies to the regular `
+      + `one-hour massages only, not to combos or add-ons`;
 }
 
 function conditionsText() {
@@ -668,96 +687,11 @@ async function recordPhotoBytes(r) {
 }
 
 // Camera capture
-async function stopStream() {
-  if (state.stream) {
-    for (const t of state.stream.getTracks()) t.stop();
-    state.stream = null;
-  }
-}
 
-async function startStream() {
-  await stopStream();
-  const constraints = {
-    audio: false,
-    video: { facingMode: state.camFacing }
-  };
-  state.stream = await navigator.mediaDevices.getUserMedia(constraints);
-  el('video').srcObject = state.stream;
-}
 
-function showModal(id, show) {
-  const m = el(id);
-  if (show) m.classList.add('show');
-  else m.classList.remove('show');
-}
 
-// UNREACHABLE as of this round — nothing calls this.
-//
-// “Take a Photo” now opens the NATIVE camera picker (#photoInput) because
-// getUserMedia does not work on iPad Safari over plain http, which is how
-// the tablets reach the app. That left this whole in-app camera path with
-// no entry point: openCameraModal, snapPhoto, startStream, stopStream, the
-// #modalCam markup and #snapCanvas are all dormant.
-//
-// Kept, not deleted, because it is the fallback if the parlors ever move to
-// https and want an in-app camera again. Do not “fix” it — it is not run.
-async function openCameraModal() {
-  showModal('modalCam', true);
-  try {
-    await startStream();
-  } catch (e) {
-    showModal('modalCam', false);
-    alert([
-      'The iPad did not let the app use the camera.',
-      '',
-      'Open Settings on the iPad, find this app, and turn Camera on.',
-      'Then come back and press "Take photo" again.',
-    ].join(String.fromCharCode(10)));
-  }
-}
 
-async function closeCameraModal() {
-  await stopStream();
-  showModal('modalCam', false);
-}
 
-async function snapPhoto() {
-  const video = el('video');
-  const canvas = el('snapCanvas');
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (!vw || !vh) return;
-
-  canvas.width = vw;
-  canvas.height = vh;
-  const ctx = canvas.getContext('2d');
-
-  ctx.drawImage(video, 0, 0, vw, vh);
-
-  const blob0 = await new Promise((resolve) =>
-    canvas.toBlob(resolve, 'image/jpeg', 0.92)
-  );
-  const blob = await downscaleToJpegBlob(blob0, 1024, 0.8);
-
-  state.photoBlob = blob;   // already downscaled above
-  state.photoTaken = true;
-
-  const consent = el('consentPrivacy');
-  if (consent) {
-    consent.checked = true;
-    consent.disabled = true;
-  }
-
-  const url = URL.createObjectURL(blob);
-  el('photoPreview').src = url;
-  el('photoPreviewBox').classList.remove('hidden');
-  el('photoStatus').textContent = 'Photo taken';
-
-  setSignatureEnabled(true);
-  validate();
-
-  await closeCameraModal();
-}
 
 // Minimal ZIP builder (store, no compression)
 function u16(n) { return new Uint8Array([n & 255, (n >>> 8) & 255]); }
@@ -1330,8 +1264,6 @@ applyPhotoGate();
     inp.click();
   });
 
-  el('btnCloseCam').addEventListener('click', closeCameraModal);
-  el('btnSnap').addEventListener('click', snapPhoto);
 
   // Option A: native camera/file picker
 el('photoInput').addEventListener('change', async (e) => {
@@ -1359,10 +1291,6 @@ el('photoInput').addEventListener('change', async (e) => {
   validate();
 });
 
-  el('btnSwitchCam').addEventListener('click', async () => {
-    state.camFacing = (state.camFacing === 'user') ? 'environment' : 'user';
-    try { await startStream(); } catch (_) {}
-  });
 
     el('btnSubmit').addEventListener('click', submit);
 

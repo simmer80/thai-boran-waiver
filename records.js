@@ -614,6 +614,8 @@
     if (m.photo && m.signature) return '<span class="ok">photo + signature</span>';
     if (m.photo) return '<span class="ok">photo</span>';
     if (m.signature) return '<span class="ok">signature</span>';
+    // Erased is a fact worth showing: someone made that decision.
+    if (m.erasedPhoto || m.erasedSignature) return '<span class="muted">erased</span>';
     return '<span class="muted">none</span>';
   }
 
@@ -639,9 +641,12 @@
     const imgs = figures.length
       ? '<div class="waiverImages">' + figures.join('') + '</div>'
       : known
-        ? '<div class="muted">No photo or signature was stored for this waiver ' +
-          '— either the photo was skipped, or it was taken before images were ' +
-          'kept on the server.</div>'
+        ? (m.erasedPhoto || m.erasedSignature
+          ? '<div class="muted">The photo and signature for this waiver were ' +
+            '<b>erased by a manager</b>. The rest of the record is unchanged.</div>'
+          : '<div class="muted">No photo or signature was stored for this waiver ' +
+            '— either the photo was skipped, or it was taken before images were ' +
+            'kept on the server.</div>')
         : '<div class="warn">Could not check whether this waiver has a photo or ' +
           'signature — the server did not answer. Try again in a moment.</div>';
 
@@ -649,7 +654,12 @@
       <div class="panel">
         <div class="row" style="justify-content:space-between;align-items:center;">
           <h2 style="margin:0">${esc(rec.customer)} — ${esc(rec.date)} ${esc(rec.timestart)}</h2>
-          <button id="wClose" class="btn">Close</button>
+          <div class="row" style="gap:8px;">
+            ${state.user && state.user.role === 'manager' && (m.photo || m.signature)
+              ? '<button id="wErase" class="btn danger">Erase photo &amp; signature</button>'
+              : ''}
+            <button id="wClose" class="btn">Close</button>
+          </div>
         </div>
         <div class="waiverDetail">
           <table class="kvTable">
@@ -677,6 +687,38 @@
       </div>`;
     $('#wClose').addEventListener('click', () => { host.innerHTML = ''; });
 
+    // Erasing a client’s photo is a manager decision and a real one, so the
+    // button only exists for a manager and says exactly what will happen.
+    const erase = $('#wErase');
+    if (erase) {
+      erase.addEventListener('click', () => busy(erase, 'Erasing…', async () => {
+        if (!confirm(`Permanently erase the photo and signature for ${rec.customer}?\n\n`
+          + 'This cannot be undone. The rest of the waiver record is kept.')) return;
+        try {
+          const q = new URLSearchParams({ site: state.site, date: rec.date, kinds: 'photo,signature' });
+          const out = await TB.api(`/api/sessions/${encodeURIComponent(rec.id)}/media?` + q.toString(),
+            { method: 'DELETE' });
+          state.waiverMedia[rec.id] = {
+            photo: false, signature: false, erasedPhoto: true, erasedSignature: true,
+          };
+          // loadWaivers() rebuilds the panel and would wipe the message with
+          // it, so refresh FIRST and then say what happened.
+          await loadWaivers();
+          openWaiver(rec.id);
+          const m2 = $('#wMsg');
+          if (m2) {
+            m2.className = out.irreversible ? 'ok' : 'warn';
+            m2.textContent = out.irreversible
+              ? 'Erased permanently — the images are gone from Google Drive.'
+              : 'Erased from the app, but these images were still in the data repository, '
+                + 'whose history keeps every version. Switch on the Drive mirror for a true erase.';
+          }
+        } catch (e) {
+          alert(TB.explain(e, 'erase the images').split(String.fromCharCode(10))[0]);
+        }
+      }));
+    }
+
     if (m.photo) loadWaiverImage('#wPhoto', rec, 'photo');
     if (m.signature) loadWaiverImage('#wSig', rec, 'signature');
     host.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -684,18 +726,69 @@
 
   // The image endpoints need the bearer token, so they cannot be a plain
   // <img src>. Fetch as a blob and hand the element an object URL.
+  // The image endpoints need the bearer token, so they cannot be a plain
+  // <img src>. Fetch as a blob and hand the element an object URL.
+  //
+  // If the server cannot be reached, fall back to THIS iPad’s own copy when
+  // it has one — the tablet that took the waiver can still show it with no
+  // WiFi, which is the whole point of capturing locally first.
   async function loadWaiverImage(sel, rec, kind) {
     const img = $(sel);
     if (!img) return;
-    try {
-      const q = new URLSearchParams({ site: state.site, date: rec.date });
-      const blob = await TB.api(`/api/sessions/${encodeURIComponent(rec.id)}/${kind}?` + q.toString());
+    const show = (blob, note) => {
       const url = URL.createObjectURL(blob);
       img.src = url;
       img.addEventListener('load', () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
-    } catch (_) {
+      if (note) {
+        const cap = img.closest('figure') && img.closest('figure').querySelector('figcaption');
+        if (cap) cap.textContent += ' — ' + note;
+      }
+    };
+    try {
+      const q = new URLSearchParams({ site: state.site, date: rec.date });
+      show(await TB.api(`/api/sessions/${encodeURIComponent(rec.id)}/${kind}?` + q.toString()));
+    } catch (e) {
+      const local = await localImage(rec.id, kind);
+      if (local) return show(local, 'from this iPad');
       const fig = img.closest('figure');
-      if (fig) fig.innerHTML = '<figcaption class="muted">This image could not be loaded.</figcaption>';
+      if (fig) {
+        fig.innerHTML = e.offline
+          ? '<figcaption class="muted">No WiFi, and this iPad does not hold a copy of this image.</figcaption>'
+          : '<figcaption class="muted">This image could not be loaded.</figcaption>';
+      }
+    }
+  }
+
+  // This device’s own copy of a waiver image, if it captured that waiver.
+  async function localImage(id, kind) {
+    try {
+      const rec = await new Promise((resolve, reject) => {
+        const q = indexedDB.open('thai_boran_waiver_db', 1);
+        q.onupgradeneeded = () => {
+          const d = q.result;
+          if (!d.objectStoreNames.contains('submissions')) d.createObjectStore('submissions', { keyPath: 'id' });
+        };
+        q.onsuccess = () => {
+          const d = q.result;
+          const g = d.transaction('submissions', 'readonly').objectStore('submissions').get(id);
+          g.onsuccess = () => { d.close(); resolve(g.result || null); };
+          g.onerror = () => { d.close(); reject(g.error); };
+        };
+        q.onerror = () => reject(q.error);
+      });
+      if (!rec) return null;
+      if (kind === 'photo') {
+        if (rec.photoBlob instanceof Blob) return rec.photoBlob;
+        if (Array.isArray(rec.photoBytes) && rec.photoBytes.length) {
+          return new Blob([new Uint8Array(rec.photoBytes)], { type: 'image/jpeg' });
+        }
+        return null;
+      }
+      return Array.isArray(rec.sigBytes) && rec.sigBytes.length
+        ? new Blob([new Uint8Array(rec.sigBytes)], { type: 'image/png' })
+        : null;
+    } catch (_) {
+      return null;
     }
   }
 

@@ -472,7 +472,7 @@
     { id: 'tom', title: 'TOM codes', sub: 'The short code on the Main Office Daily Sales Report', body: '<div id="tomBody" class="muted">Loading…</div>', load: () => renderTomCodes() },
     { id: 'therapists', title: 'Therapists', sub: 'Shared — staff rotate between parlors', body: '<div id="thBody"></div>', load: () => renderTherapists() },
     { id: 'users', title: 'Users & passwords', sub: 'Reset a receptionist’s password', body: '<div id="usersBody"></div>', load: () => renderUsersAdmin() },
-    { id: 'drive', title: 'Google Drive mirror', sub: 'Whether approved copies are reaching Drive', body: '<div id="driveBody" class="muted">Loading…</div>', load: () => loadDrive() },
+    { id: 'drive', title: 'Google Drive', sub: 'Where documents and client photos are kept', body: '<div id="driveBody" class="muted">Loading…</div>', load: () => loadDrive() },
   ];
 
   function renderAdminSection(host) {
@@ -1473,18 +1473,37 @@
         } catch (_) {}
       }
       if (!cur) cur = { effectiveFrom: '(none yet)', services: {}, addons: {} };
+
+      // Senior/PWD eligibility. The rule the owner set: the 20% applies to
+      // the regular one-hour massages only — not to a Combo, and never to
+      // an add-on. These six are the SEED for a price list that has no map
+      // yet; after that the manager owns it here, so marking a new service
+      // eligible never needs a code change.
+      const SENIOR_SEED = ['1hr Thai Back Massage', '1hr Thai Body Massage', '1hr Thai Foot Massage',
+        '1hr Thai Swedish Massage', '1hr Swedish Massage', '1hr Thai Aromatherapy Massage'];
+      const eligNow = cur.seniorEligible && typeof cur.seniorEligible === 'object'
+        ? cur.seniorEligible
+        : Object.fromEntries(SENIOR_SEED.map((n) => [n, true]));
       const SERVICES = ['1hr Thai Back Massage', '1hr Thai Body Massage', '1hr Thai Foot Massage', '1hr Thai Swedish Massage',
         '1hr Swedish Massage', '1hr Thai Aromatherapy Massage', 'Combo 1', 'Combo 2', 'Combo 3', 'Combo 4', 'Combo 5', 'Combo 6', 'Combo 7', 'Combo 8'];
       const ADD_ONS = ['Unscented Oil', 'Scented Oil', 'Herbal Hotpads', 'Ventosa', 'Hot Stone', 'Half Hour', '1 hr extra massage'];
       const row = (g, n) => `<tr><td>${esc(n)}</td><td>${g === 's' ? 'Service' : 'Add-On'}</td>
         <td><input class="prIn" data-g="${g}" data-n="${esc(n)}" type="number" step="1" min="0"
-          value="${(g === 's' ? cur.services[n] : cur.addons[n]) ?? 0}" style="width:100px" disabled /></td></tr>`;
+          value="${(g === 's' ? cur.services[n] : cur.addons[n]) ?? 0}" style="width:100px" disabled /></td>
+        <td style="text-align:center">${g === 's'
+          ? `<input class="prSen" type="checkbox" data-n="${esc(n)}" ${eligNow[n] ? 'checked' : ''} disabled
+               aria-label="Senior/PWD discount applies to ${esc(n)}" />`
+          : '<span class="muted" title="Add-ons are never discounted">\u2014</span>'}</td></tr>`;
       host.innerHTML = `
         <div class="muted">${seededFromDevice
           ? '<b>The server has no prices yet.</b> The table below is prefilled from THIS device\'s price list — press "Edit prices" then "Save" to make it the shared list for both parlors.'
           : `Current prices (effective from ${esc(cur.effectiveFrom)}). Changes apply to BOTH parlors and reach the iPads automatically.`}</div>
+        <div class="muted" style="margin-top:6px;">The <b>Senior/PWD 20%</b> column decides which services
+          carry the discount. Tick a service to make it eligible. <b>Add-ons are never
+          discounted</b> — not even on an eligible massage, and not when one is added
+          mid-service.</div>
         <div class="tableWrap" style="max-height:280px;overflow:auto;margin-top:8px;"><table>
-          <thead><tr><th>Item</th><th>Type</th><th>Price</th></tr></thead>
+          <thead><tr><th>Item</th><th>Type</th><th>Price</th><th title="20% Senior/PWD">Senior/PWD 20%</th></tr></thead>
           <tbody>${SERVICES.map((n) => row('s', n)).join('')}${ADD_ONS.map((n) => row('a', n)).join('')}</tbody>
         </table></div>
         <div class="row" style="margin-top:8px;">
@@ -1495,6 +1514,7 @@
       $('#prEdit').addEventListener('click', () => {
         if (!confirm('Unlock prices for editing? New prices apply to both parlors starting today.')) return;
         host.querySelectorAll('.prIn').forEach((i) => { i.disabled = false; });
+        host.querySelectorAll('.prSen').forEach((c) => { c.disabled = false; });
         $('#prSave').disabled = false;
         $('#prEdit').disabled = true;
       });
@@ -1506,11 +1526,14 @@
           if (!Number.isFinite(v) || v < 0) bad = true;
           (i.dataset.g === 's' ? services : addons)[i.dataset.n] = v;
         });
+        const seniorEligible = {};
+        host.querySelectorAll('.prSen').forEach((c) => { seniorEligible[c.dataset.n] = c.checked; });
         const m = $('#prMsg');
         if (bad) { m.className = 'err'; m.textContent = 'Prices must be 0 or more.'; return; }
         const d = new Date();
         const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const sets = [...state.prices.filter((x) => x.effectiveFrom !== today), { effectiveFrom: today, services, addons }];
+        const sets = [...state.prices.filter((x) => x.effectiveFrom !== today),
+          { effectiveFrom: today, services, addons, seniorEligible }];
         try {
           await TB.api('/api/prices', { method: 'PUT', body: { sets } });
           await TB.refreshPrices(); // update this device's cache too
@@ -1523,21 +1546,71 @@
     }
   }
 
+  // The Drive panel now covers two things: the DOCUMENT mirror (approved
+  // PDFs) and where WAIVER PHOTOS are being kept. The second matters more,
+  // because it decides whether a client asking for their photo to be erased
+  // can actually be obliged — the data repository is a git repository and
+  // keeps every version it was ever given.
   async function loadDrive() {
+    const host = $('#driveBody');
     try {
-      const s = await TB.api('/api/drive/status');
-      $('#driveBody').innerHTML = s.enabled
-        ? `Mirror is ON. Pending uploads: <b>${s.pending}</b>
-           ${s.pending ? '<button id="driveRetry" class="btn" style="margin-left:8px">Retry now</button>' : ''}`
-        : 'Mirror is switched off — an administrator can enable it on the server (see SETUP guide).';
-      const b = $('#driveRetry');
-      if (b) b.addEventListener('click', async () => {
-        b.disabled = true;
+      const [s, media] = await Promise.all([
+        TB.api('/api/drive/status'),
+        TB.api('/api/waiver-media/status').catch(() => null),
+      ]);
+
+      const docs = s.enabled
+        ? `Document mirror is <b class="ok">ON</b>. Pending uploads: <b>${s.pending}</b>`
+          + (s.pending ? ' <button id="driveRetry" class="btn">Retry now</button>' : '')
+        : 'Document mirror is <b>off</b> — approved PDFs are not being copied to Drive.';
+
+      const photos = !media ? '' : `
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line-2);">
+          <b>Client photos and signatures</b>
+          <div class="${media.driveEnabled ? 'muted' : 'warn'}" style="margin-top:4px;">
+            Currently stored in: <b>${esc(media.storingIn)}</b>. ${esc(media.note)}
+          </div>
+          ${media.driveEnabled ? `
+            <div class="row" style="margin-top:8px;">
+              <button id="mediaMigrateDry" class="btn">Check what is still in the repository</button>
+              <button id="mediaMigrate" class="btn primary">Move it all to Drive</button>
+            </div>` : ''}
+          <div id="mediaMigrateMsg" class="muted" role="status" style="margin-top:8px;"></div>
+        </div>`;
+
+      host.innerHTML = docs + photos;
+
+      const retry = $('#driveRetry');
+      if (retry) retry.addEventListener('click', () => busy(retry, 'Retrying…', async () => {
         const out = await TB.api('/api/drive/retry', { method: 'POST' });
-        $('#driveBody').innerHTML = `Retried: ${out.retried} uploaded, ${out.remaining} still pending.`;
-      });
+        host.innerHTML = `Retried: ${out.retried} uploaded, ${out.remaining} still pending.`;
+      }));
+
+      const migrate = async (dryRun) => {
+        const msg = $('#mediaMigrateMsg');
+        msg.className = 'muted';
+        msg.textContent = dryRun ? 'Checking…' : 'Moving — this can take a while…';
+        try {
+          const out = await TB.api('/api/waiver-media/migrate?dryRun=' + (dryRun ? 'true' : 'false'),
+            { method: 'POST' });
+          const n = out.moved.length;
+          msg.className = out.failed.length ? 'warn' : 'ok';
+          msg.textContent = dryRun
+            ? (n ? `${n} image(s) are still in the data repository and can be moved.`
+                 : 'Nothing left in the repository — every image is already in Drive.')
+            : `Moved ${n} image(s) to Drive.`
+              + (out.failed.length ? ` ${out.failed.length} could not be moved: ${esc(out.failed[0].error)}` : '');
+        } catch (e) {
+          msg.className = 'err';
+          msg.textContent = TB.explain(e, 'move the images').split(String.fromCharCode(10))[0];
+        }
+      };
+      const dry = $('#mediaMigrateDry');
+      if (dry) dry.addEventListener('click', () => busy(dry, 'Checking…', () => migrate(true)));
+      const go = $('#mediaMigrate');
+      if (go) go.addEventListener('click', () => busy(go, 'Moving…', () => migrate(false)));
     } catch (e) {
-      $('#driveBody').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+      host.innerHTML = `<span class="err">${esc(TB.explain(e, 'read the Drive status').split(String.fromCharCode(10))[0])}</span>`;
     }
   }
 

@@ -53,10 +53,7 @@ textarea { min-height: 72px; }
 .modal-card { background: #fff; width: min(920px, 100%); border-radius: 14px; overflow: hidden; }
 .modal-head { padding: 12px 14px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
 .modal-body { padding: 14px; }
-.video-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; }
 video { width: 100%; height: auto; display: block; }
-.oval-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.oval-overlay img { width: 78%; max-width: 520px; height: auto; opacity: 0.92; }
 .preview { max-width: 240px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
 .preview img { width: 100%; height: auto; display: block; }
 .table { width: 100%; border-collapse: collapse; }

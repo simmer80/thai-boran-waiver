@@ -449,26 +449,6 @@ function pricingForDisplay(r) {
   };
 }
 
-// UNREACHABLE as of this round — nothing calls this. It scraped service and
-// add-on names out of session rows before the price list became the single
-// source of those names. Left in place only as a reference for how the old
-// free-text data looked; it feeds nothing.
-function collectDistinctItemsFromRows(rows) {
-  const svc = new Set();
-  const add = new Set();
-
-  for (const r of rows) {
-    const s = String(r.services || "").trim();
-    if (s) svc.add(s);
-
-    for (const a of parseAddonsList(r.addons)) add.add(a);
-  }
-
-  const items = [];
-  [...svc].sort().forEach(name => items.push({ type: "service", name }));
-  [...add].sort().forEach(name => items.push({ type: "addon", name }));
-  return items;
-}
 
 function renderPriceEditor() {
   // Legacy local editor removed from the page: prices are org-shared and
