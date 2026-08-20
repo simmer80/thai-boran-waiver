@@ -341,3 +341,14 @@
 @media (max-width: 700px) {
   .boNavItem { flex-basis: 100%; }
 }
+
+/* ---- TOM code editor --------------------------------------------------- */
+.tomMissing {
+  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 10px; font-size: 13px; color: #78350f;
+}
+.bo input.tomIn {
+  text-transform: uppercase; font-weight: 700; text-align: center;
+  font-variant-numeric: tabular-nums; letter-spacing: 1px;
+}
+.bo input.tomIn.bad { border-color: #b91c1c; background: #fef2f2; }

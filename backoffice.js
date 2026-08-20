@@ -33,6 +33,7 @@
     report: null, reportType: 'daily-commission', reportPeriod: '',
     editMode: false,     // editing the values IN the document template
     section: '',         // which step of the role's workflow is on screen
+    tom: null,           // service -> TOM code, straight from the org config
 
     liveSubSigUrl: '', liveSubSigKey: undefined,
     sessions: [], editingId: null,
@@ -465,6 +466,9 @@
       <div class="panel noprint"><h2 style="margin-top:0">Prices
         <span class="muted" style="font-size:12px;">(shared — both parlors charge the same)</span></h2>
         <div id="pricesBody" class="muted">Loading…</div></div>
+      <div class="panel noprint"><h2 style="margin-top:0">TOM codes
+        <span class="muted" style="font-size:12px;">(the short code on the Main Office Daily Sales Report)</span></h2>
+        <div id="tomBody" class="muted">Loading…</div></div>
       <div class="panel noprint"><h2 style="margin-top:0">Therapists
         <span class="muted" style="font-size:12px;">(shared — staff rotate between parlors)</span></h2>
         <div id="thBody"></div></div>
@@ -473,9 +477,152 @@
       <div class="panel noprint"><h2 style="margin-top:0">Google Drive mirror</h2>
         <div id="driveBody" class="muted">Loading…</div></div>`;
     renderPricesAdmin();
+    renderTomCodes();
     renderTherapists();
     renderUsersAdmin();
     loadDrive();
+  }
+
+  // ------------------------------------------------------------ TOM codes
+  // The short code written in the TOM column of the Main Office Daily Sales
+  // Report. The pairing is business data, so the manager owns it here and no
+  // code is ever written into the app: a new service gets a code in this
+  // panel and the next document already prints it.
+  async function renderTomCodes() {
+    const host = $('#tomBody');
+    if (!host) return;
+    try {
+      const out = await TB.api('/api/tom-codes');
+      state.tom = out;
+      const { codes, services, missing } = out;
+
+      // Everything with a code, plus every priced service without one.
+      const coded = Object.entries(codes)
+        .map(([service, code]) => ({ service, code, priced: services.includes(service) }))
+        .sort((a, b) => a.service.localeCompare(b.service));
+      const uncoded = missing.map((service) => ({ service, code: '', priced: true }));
+      const rows = [...coded, ...uncoded].sort((a, b) => a.service.localeCompare(b.service));
+
+      host.innerHTML = `
+        <div class="muted" style="margin-bottom:8px;">
+          Each service gets a short code — BS, TS, BK, TB, TA, F — and the daily
+          sales sheet prints that code instead of the full name. A service with
+          no code prints its full name until you give it one.
+        </div>
+        ${missing.length ? `<div class="tomMissing">
+          <b>${missing.length} service${missing.length > 1 ? 's' : ''} still without a code:</b>
+          ${missing.map((m) => esc(m)).join(', ')}
+        </div>` : '<div class="ok" style="margin-bottom:8px;">Every service in the price list has a code.</div>'}
+        <div class="tableWrap"><table>
+          <thead><tr><th>Service</th><th style="width:120px;">TOM code</th><th style="width:190px;"></th></tr></thead>
+          <tbody>${rows.map((r) => `<tr data-service="${esc(r.service)}">
+            <td>${esc(r.service)}${r.priced ? '' : ' <span class="muted">(not in the price list)</span>'}</td>
+            <td><input class="tomIn" data-service="${esc(r.service)}" value="${esc(r.code)}"
+              maxlength="6" size="6" inputmode="text" autocapitalize="characters"
+              aria-label="TOM code for ${esc(r.service)}" placeholder="—" /></td>
+            <td class="row" style="gap:6px;">
+              <button class="btn primary tomSave" data-service="${esc(r.service)}">Save</button>
+              ${r.code ? `<button class="btn tomClear" data-service="${esc(r.service)}">Clear</button>` : ''}
+            </td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+        <div class="panel" style="background:#f8fafc;margin-top:12px;">
+          <b>Add a service and its code</b>
+          <div class="muted">For something the price list does not carry yet.</div>
+          <div class="row" style="margin-top:8px;">
+            <div><label for="tomNewService">Service</label>
+              <input id="tomNewService" placeholder="e.g. Hot Stone Ritual" style="width:260px" /></div>
+            <div><label for="tomNewCode">TOM code</label>
+              <input id="tomNewCode" maxlength="6" style="width:100px" autocapitalize="characters" placeholder="e.g. HSR" /></div>
+            <button id="tomAdd" class="btn primary">Add</button>
+          </div>
+        </div>
+        <div id="tomMsg" role="status" style="margin-top:8px;"></div>`;
+
+      const msg = (text, cls) => {
+        const m = $('#tomMsg');
+        m.className = cls || '';
+        m.textContent = text;
+        if (cls === 'ok') {
+          const mine = text;
+          setTimeout(() => { if (m.isConnected && m.textContent === mine) { m.className = ''; m.textContent = ''; } }, 4000);
+        }
+      };
+
+      // Same shape of validation as the therapist editor: check here first so
+      // a typo never costs a round trip, and let the server have the last word.
+      const localProblem = (code) => {
+        const c = String(code || '').trim().toUpperCase();
+        if (!c) return 'Enter a code.';
+        if (c.length > 6) return 'A code can be at most 6 characters.';
+        for (const ch of c) {
+          const ok = (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9');
+          if (!ok) return 'Codes use letters and digits only.';
+        }
+        return null;
+      };
+      const flag = (input, problem) => {
+        input.classList.toggle('bad', !!problem);
+        input.title = problem || '';
+      };
+
+      const saveOne = async (service, code, btn) => {
+        const input = host.querySelector(`.tomIn[data-service="${cssq(service)}"]`);
+        const problem = localProblem(code);
+        if (input) flag(input, problem);
+        if (problem) { msg(problem, 'err'); if (input) input.focus(); return; }
+        try {
+          state.tom = await TB.api('/api/tom-codes/' + encodeURIComponent(service), {
+            method: 'PUT', body: { code },
+          });
+          await renderTomCodes();                       // list refreshes itself
+          $('#tomMsg').className = 'ok';
+          $('#tomMsg').textContent = `${service} → ${String(code).trim().toUpperCase()} ✓`;
+          setTimeout(() => { const m = $('#tomMsg'); if (m && m.className === 'ok') { m.className = ''; m.textContent = ''; } }, 4000);
+        } catch (e) {
+          if (input) flag(input, e.message);
+          msg(e.message, 'err');
+        }
+      };
+
+      host.querySelectorAll('.tomIn').forEach((el) => {
+        el.addEventListener('input', () => flag(el, localProblem(el.value)));
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') host.querySelector(`.tomSave[data-service="${cssq(el.dataset.service)}"]`).click();
+        });
+      });
+      host.querySelectorAll('.tomSave').forEach((b) =>
+        b.addEventListener('click', () => busy(b, 'Saving…', () => {
+          const input = host.querySelector(`.tomIn[data-service="${cssq(b.dataset.service)}"]`);
+          return saveOne(b.dataset.service, input.value, b);
+        })));
+      host.querySelectorAll('.tomClear').forEach((b) =>
+        b.addEventListener('click', () => busy(b, 'Clearing…', async () => {
+          if (!confirm(`Remove the code for ${b.dataset.service}? The sheet will print its full name again.`)) return;
+          try {
+            state.tom = await TB.api('/api/tom-codes/' + encodeURIComponent(b.dataset.service), { method: 'DELETE' });
+            await renderTomCodes();
+          } catch (e) { msg(e.message, 'err'); }
+        })));
+
+      $('#tomAdd').addEventListener('click', () => busy($('#tomAdd'), 'Adding…', async () => {
+        const service = $('#tomNewService').value.trim();
+        const code = $('#tomNewCode').value.trim();
+        if (!service) { msg('Enter the service name.', 'err'); $('#tomNewService').focus(); return; }
+        const problem = localProblem(code);
+        if (problem) { msg(problem, 'err'); $('#tomNewCode').focus(); return; }
+        try {
+          state.tom = await TB.api('/api/tom-codes/' + encodeURIComponent(service), {
+            method: 'PUT', body: { code },
+          });
+          await renderTomCodes();
+          $('#tomMsg').className = 'ok';
+          $('#tomMsg').textContent = `${service} → ${code.toUpperCase()} ✓ added`;
+        } catch (e) { msg(e.message, 'err'); }
+      }));
+    } catch (e) {
+      host.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    }
   }
 
   // -------------------------------------------------------- this device
