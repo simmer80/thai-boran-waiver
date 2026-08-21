@@ -187,6 +187,12 @@
     if (!err) return `Could not ${what}. Please try again.`;
     const msg = String((err && err.message) || err || '');
 
+    // A 409 is a BUSINESS RULE refusal, not a fault: the server has already
+    // written a sentence for the person reading it, and it usually says what
+    // to do instead (“deactivate rather than remove”). Replacing that with a
+    // generic “Could not …” throws away the only useful part.
+    if (err.status === 409 && msg && msg !== 'request failed') return msg;
+
     if (err.offline || !navigator.onLine) {
       return `The iPad has no WiFi at the moment, so it could not ${what}.\n\n` +
         `Waivers you take are still saved on this iPad and will be sent by ` +

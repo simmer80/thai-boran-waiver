@@ -35,6 +35,7 @@
     section: '',         // which step of the role's workflow is on screen
     tom: null,           // service -> TOM code, straight from the org config
     adminOpen: {},       // which admin sections the manager left open
+    receptionists: [],
 
     liveSubSigUrl: '', liveSubSigKey: undefined,
     sessions: [], editingId: null,
@@ -473,7 +474,10 @@
     { id: 'prices', title: 'Prices', sub: 'Shared — both parlors charge the same', body: '<div id="pricesBody" class="muted">Loading…</div>', load: () => renderPricesAdmin() },
     { id: 'tom', title: 'TOM codes', sub: 'The short code on the Main Office Daily Sales Report', body: '<div id="tomBody" class="muted">Loading…</div>', load: () => renderTomCodes() },
     { id: 'therapists', title: 'Therapists', sub: 'Shared — staff rotate between parlors', body: '<div id="thBody"></div>', load: () => renderTherapists() },
-    { id: 'users', title: 'Users & passwords', sub: 'Reset a receptionist’s password', body: '<div id="usersBody"></div>', load: () => renderUsersAdmin() },
+    { id: 'receptionists', title: 'Receptionists', sub: 'The front-desk staff and their logins',
+      body: '<div id="recBody"></div>', load: () => renderReceptionists() },
+    { id: 'users', title: 'Passwords', sub: 'Reset a forgotten password',
+      body: '<div id="usersBody"></div>', load: () => renderUsersAdmin() },
     { id: 'drive', title: 'Google Drive', sub: 'Where documents and client photos are kept', body: '<div id="driveBody" class="muted">Loading…</div>', load: () => loadDrive() },
   ];
 
@@ -807,16 +811,184 @@
 
   // Manager: reset a receptionist's password (forgot-password flow — the
   // temporary password is shown ONCE here for the manager to hand over).
+  // RECEPTIONISTS.
+  //
+  // A receptionist IS a login user — there is ONE list, users.json, and this
+  // is it. Adding her here creates the account she signs in with, in the same
+  // step. There is deliberately no separate staff list to drift out of step
+  // with the accounts, and the Passwords section is not a second place to
+  // create people; it only resets a forgotten one.
+  //
+  // Same rules as the therapist admin above: manager-only, validated before
+  // the round trip, and REMOVAL IS REFERENCES-AWARE — if her name is on a
+  // waiver or a document she is deactivated, never deleted.
+  async function renderReceptionists() {
+    const host = $('#recBody');
+    if (!host) return;
+    host.innerHTML = '<div class="muted">Loading…</div>';
+    try {
+      const out = await TB.api('/api/receptionists');
+      state.receptionists = out.receptionists || [];
+      paintReceptionists();
+    } catch (e) {
+      host.innerHTML = `<span class="err">${esc(TB.explain(e, 'load the receptionists').split(String.fromCharCode(10))[0])}</span>`;
+    }
+  }
+
+  function paintReceptionists() {
+    const host = $('#recBody');
+    const list = state.receptionists || [];
+    const active = list.filter((r) => r.active !== false);
+    const inactive = list.filter((r) => r.active === false);
+
+    const row = (r) => `<tr>
+      <td>${esc(r.id)}</td><td>${esc(r.name)}</td>
+      <td>${esc(SITE_LABELS[r.branch] || r.branch || '—')}</td>
+      <td>${r.mustChangePassword ? '<span class="muted">must set a password</span>' : '—'}</td>
+      <td class="row" style="gap:6px;">
+        <button class="btn rcEdit" data-id="${esc(r.id)}">Edit</button>
+        ${r.active === false
+          ? `<button class="btn rcOn" data-id="${esc(r.id)}">Reactivate</button>`
+          : `<button class="btn rcOff" data-id="${esc(r.id)}">Deactivate</button>`}
+        <button class="btn danger rcDel" data-id="${esc(r.id)}" data-name="${esc(r.name)}">Remove</button>
+      </td></tr>`;
+
+    const table = (rows, empty) => rows.length
+      ? `<div class="tableWrap"><table>
+          <thead><tr><th>Username</th><th>Name</th><th>Parlor</th><th>Password</th><th></th></tr></thead>
+          <tbody>${rows.map(row).join('')}</tbody></table></div>`
+      : `<div class="muted">${empty}</div>`;
+
+    host.innerHTML = `
+      <div class="muted" style="margin-bottom:8px;">
+        This is the <b>same list</b> as the sign-in accounts — adding someone here
+        creates the login she uses at the front desk. She chooses her own password
+        the first time she signs in, so you never need to know it.
+      </div>
+      ${table(active, 'No receptionists yet. Add the first one below.')}
+      ${inactive.length ? `<div style="margin-top:12px;"><b class="muted">Deactivated</b>${table(inactive, '')}</div>` : ''}
+      <div id="rcEditor"></div>
+      <div class="panel" style="background:var(--paper-2);margin-top:12px;">
+        <b>Add a receptionist</b>
+        <div class="row" style="margin-top:8px;">
+          <div><label for="rcNewName">Full name</label><input id="rcNewName" placeholder="e.g. Maria Santos" /></div>
+          <div><label for="rcNewId">Username <span class="muted">(what she types to sign in)</span></label>
+            <input id="rcNewId" style="width:150px" placeholder="maria" autocapitalize="off" autocorrect="off" /></div>
+          <div><label for="rcNewBranch">Parlor</label><select id="rcNewBranch">
+            ${Object.entries(SITE_LABELS).map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join('')}
+          </select></div>
+          <div><label for="rcNewPw">First password <span class="muted">(she will change it)</span></label>
+            <input id="rcNewPw" type="text" style="width:170px" placeholder="at least 8 characters" autocapitalize="off" /></div>
+          <button id="rcAdd" class="btn primary">Add receptionist</button>
+          <span id="rcMsg" role="alert"></span>
+        </div>
+      </div>`;
+
+    const msg = (text, cls) => { const m = $('#rcMsg'); if (m) { m.className = cls || ''; m.textContent = text; } };
+    const fail = (e) => msg(TB.explain(e, 'save the receptionist').split(String.fromCharCode(10))[0], 'err');
+    const refresh = (out) => { state.receptionists = out.receptionists || []; paintReceptionists(); };
+    const note = (t) => { const m = $('#rcMsg'); if (m) { m.className = 'ok'; m.textContent = t; } };
+
+    host.querySelectorAll('.rcOff').forEach((b) => b.addEventListener('click', () => busy(b, '…', async () => {
+      if (!confirm('Deactivate this receptionist? She is signed out straight away and cannot sign in again until you reactivate her. Her waivers and documents are kept.')) return;
+      try { refresh(await TB.api('/api/receptionists/' + encodeURIComponent(b.dataset.id), { method: 'PATCH', body: { active: false } })); }
+      catch (e) { fail(e); }
+    })));
+
+    host.querySelectorAll('.rcOn').forEach((b) => b.addEventListener('click', () => busy(b, '…', async () => {
+      try { refresh(await TB.api('/api/receptionists/' + encodeURIComponent(b.dataset.id), { method: 'PATCH', body: { active: true } })); }
+      catch (e) { fail(e); }
+    })));
+
+    host.querySelectorAll('.rcDel').forEach((b) => b.addEventListener('click', () => busy(b, '…', async () => {
+      if (!confirm(`Remove ${b.dataset.name} completely?\n\nThis is only possible if her name is on no waiver and no document. If it is, deactivate her instead — the app will tell you.`)) return;
+      try { refresh(await TB.api('/api/receptionists/' + encodeURIComponent(b.dataset.id), { method: 'DELETE' })); note('Removed.'); }
+      catch (e) {
+        // The references-aware refusal is the useful case: say what to do.
+        msg(TB.explain(e, 'remove the receptionist').split(String.fromCharCode(10))[0], 'err');
+      }
+    })));
+
+    host.querySelectorAll('.rcEdit').forEach((b) => b.addEventListener('click', () => {
+      const r = (state.receptionists || []).find((x) => x.id === b.dataset.id);
+      if (!r) return;
+      $('#rcEditor').innerHTML = `<div class="panel" style="background:var(--paper-2);margin-top:10px;">
+        <b>Edit receptionist — ${esc(r.id)}</b>
+        <div class="row" style="margin-top:8px;">
+          <div><label for="rcEName">Full name</label><input id="rcEName" value="${esc(r.name)}" /></div>
+          <div><label for="rcEBranch">Parlor</label><select id="rcEBranch">
+            ${Object.entries(SITE_LABELS).map(([id, l]) =>
+              `<option value="${id}" ${id === r.branch ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+          </select></div>
+          <div><label for="rcEActive">Active</label><input id="rcEActive" type="checkbox" ${r.active !== false ? 'checked' : ''} /></div>
+          <button id="rcESave" class="btn primary">Save</button>
+          <button id="rcECancel" class="btn">Cancel</button>
+          <span id="rcEMsg" class="err" role="alert"></span>
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          The username cannot be changed — it is stamped on every waiver she has
+          taken. To reset her password, use <b>Passwords</b> below.
+        </div></div>`;
+
+      $('#rcECancel').addEventListener('click', () => { $('#rcEditor').innerHTML = ''; });
+      $('#rcESave').addEventListener('click', () => busy($('#rcESave'), 'Saving…', async () => {
+        const name = $('#rcEName').value.trim();
+        const em = $('#rcEMsg');
+        if (!name) { em.textContent = 'Full name cannot be empty.'; return; }
+        try {
+          refresh(await TB.api('/api/receptionists/' + encodeURIComponent(r.id), {
+            method: 'PATCH',
+            body: { name, branch: $('#rcEBranch').value, active: $('#rcEActive').checked },
+          }));
+          note(name + ' saved ✓');
+        } catch (e) { em.textContent = TB.explain(e, 'save the receptionist').split(String.fromCharCode(10))[0]; }
+      }));
+    }));
+
+    // Suggest a username from the name, the way the therapist form does.
+    const nameBox = $('#rcNewName');
+    const idBox = $('#rcNewId');
+    if (nameBox && idBox) {
+      nameBox.addEventListener('input', () => {
+        if (idBox.dataset.touched) return;
+        idBox.value = nameBox.value.trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z0-9_-]/g, '');
+      });
+      idBox.addEventListener('input', () => { idBox.dataset.touched = '1'; });
+    }
+
+    $('#rcAdd').addEventListener('click', () => busy($('#rcAdd'), 'Adding…', async () => {
+      const name = $('#rcNewName').value.trim();
+      const id = $('#rcNewId').value.trim().toLowerCase();
+      const pw = $('#rcNewPw').value;
+      // Checked here as well as on the server, so a mistake surfaces at once
+      // rather than after a round trip on a sleeping free-tier server.
+      if (!name) return msg('Full name cannot be empty.', 'err');
+      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(id)) {
+        return msg('Username must be 1–32 characters: lowercase letters, digits, hyphen, underscore.', 'err');
+      }
+      if (pw.length < 8) return msg('The first password must be at least 8 characters.', 'err');
+      try {
+        refresh(await TB.api('/api/receptionists', {
+          method: 'POST',
+          body: { id, name, branch: $('#rcNewBranch').value, password: pw },
+        }));
+        note(name + ' added ✓ — she signs in as "' + id + '" and will choose her own password.');
+      } catch (e) { fail(e); }
+    }));
+  }
+
   function renderUsersAdmin() {
     const host = $('#usersBody');
     const receptionists = state.users.filter((u) => u.role === 'receptionist');
     host.innerHTML = `
       <div class="muted" style="margin-bottom:8px;">
-        If a receptionist forgets her password: reset it here, hand over the
-        temporary password, and she will be forced to choose her own on next
-        sign-in. Manager passwords cannot be reset here — that is done from
-        the server command line by the administrator.
-      </div>
+        <b>This panel only resets a forgotten password.</b> To add, edit,
+        deactivate or remove a receptionist, use <b>Receptionists</b> above —
+        that is the one list, and it is where her login is created.
+        <div style="margin-top:6px;">Reset here, hand over the temporary password,
+        and she is forced to choose her own on next sign-in. Manager passwords
+        cannot be reset here — that is done from the server command line by the
+        administrator.</div>
       <div class="tableWrap"><table>
         <thead><tr><th>Username</th><th>Name</th><th>Role</th><th></th></tr></thead>
         <tbody>${state.users.map((u) => `<tr>
@@ -1303,7 +1475,36 @@
     }
   }
 
-  const REST_DAYS = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // A therapist's fixed rest DAYS — several have four. Reads both the new
+  // array and the single string older records still carry.
+  function restDaysOf(t) {
+    const raw = Array.isArray(t && t.restDays) ? t.restDays
+      : ((t && t.restDay) ? [t.restDay] : []);
+    const set = new Set(raw.map((d) => String(d || '').trim().toLowerCase()));
+    return WEEKDAYS.filter((d) => set.has(d.toLowerCase()));
+  }
+
+  // Seven checkboxes, not a <select multiple>. A multi-select on an iPad
+  // needs a long-press or a two-finger drag to pick more than one, which no
+  // receptionist will discover — these are plain 44px tap targets.
+  function restDayPicker(idPrefix, chosen) {
+    const on = new Set(chosen || []);
+    return '<div class="rdPick" role="group" aria-label="Fixed rest days">'
+      + WEEKDAYS.map((d) => `<label class="rdDay">`
+        + `<input type="checkbox" id="${idPrefix}-${d}" data-rd="${idPrefix}" value="${d}"`
+        + `${on.has(d) ? ' checked' : ''} />`
+        + `<span>${d.slice(0, 3)}</span></label>`).join('')
+      + '</div>';
+  }
+
+  // What the picker currently says, in week order.
+  function readRestDayPicker(idPrefix) {
+    const boxes = [...document.querySelectorAll(`[data-rd="${idPrefix}"]`)];
+    const on = new Set(boxes.filter((b) => b.checked).map((b) => b.value));
+    return WEEKDAYS.filter((d) => on.has(d));
+  }
 
   function renderTherapists() {
     const host = $('#thBody');
@@ -1312,7 +1513,7 @@
 
     const row = (t) => `<tr>
       <td>${esc(t.id)}</td><td>${esc(t.fullName)}</td>
-      <td>${esc(t.restDay || '—')}</td><td>${(t.commissionRate ?? 0)}</td>
+      <td>${restDaysOf(t).map((d) => d.slice(0, 3)).join(', ') || '—'}</td><td>${(t.commissionRate ?? 0)}</td>
       <td class="row" style="gap:6px;">
         <button class="btn tEdit" data-id="${esc(t.id)}">Edit</button>
         ${t.active === false
@@ -1341,9 +1542,8 @@
           <div><label for="tNewName">Full name</label><input id="tNewName" placeholder="e.g. Ana Cruz" /></div>
           <div><label for="tNewId">ID <span class="muted">(suggested — you can change it)</span></label>
             <input id="tNewId" style="width:130px" placeholder="t-ana" /></div>
-          <div><label for="tNewRest">Fixed rest day</label><select id="tNewRest">
-            ${REST_DAYS.map((d) => `<option value="${d}">${d || '(none)'}</option>`).join('')}
-          </select></div>
+          <div style="flex:1 1 100%;"><label>Fixed rest days</label>
+            ${restDayPicker('tNewRest', [])}</div>
           <div><label for="tNewRate">Commission rate (0–1, e.g. 0.4 = 40%)</label>
             <input id="tNewRate" type="number" step="0.01" min="0" max="1" value="0.4" style="width:100px" /></div>
           <div><label for="tNewActive">Active</label><input id="tNewActive" type="checkbox" checked /></div>
@@ -1381,9 +1581,8 @@
         <div class="row" style="margin-top:8px;">
           <div><label for="teId">ID</label><input id="teId" value="${esc(t.id)}" style="width:130px" /></div>
           <div><label for="teName">Full name</label><input id="teName" value="${esc(t.fullName)}" /></div>
-          <div><label for="teRest">Fixed rest day</label><select id="teRest">
-            ${REST_DAYS.map((d) => `<option value="${d}" ${d === (t.restDay || '') ? 'selected' : ''}>${d || '(none)'}</option>`).join('')}
-          </select></div>
+          <div style="flex:1 1 100%;"><label>Fixed rest days</label>
+            ${restDayPicker('teRest', restDaysOf(t))}</div>
           <div><label for="teRate">Commission rate (0–1, e.g. 0.4 = 40%)</label>
             <input id="teRate" type="number" step="0.01" min="0" max="1" value="${t.commissionRate ?? 0}" style="width:100px" /></div>
           <div><label for="teActive">Active</label><input id="teActive" type="checkbox" ${t.active !== false ? 'checked' : ''} /></div>
@@ -1437,7 +1636,7 @@
           // 2. remaining field changes against the (possibly new) id
           const out2 = await TB.api('/api/therapists/' + encodeURIComponent(currentId), {
             method: 'PATCH',
-            body: { fullName, restDay: $('#teRest').value, commissionRate: rate, active: $('#teActive').checked },
+            body: { fullName, restDays: readRestDayPicker('teRest'), commissionRate: rate, active: $('#teActive').checked },
           });
           state.therapists = out2.therapists;
           renderTherapists();
@@ -1512,7 +1711,7 @@
           method: 'POST',
           body: {
             id, fullName,
-            restDay: $('#tNewRest').value,
+            restDays: readRestDayPicker('tNewRest'),
             commissionRate: rate,
             active: $('#tNewActive').checked,
           },

@@ -729,3 +729,20 @@ body.tb-app { background: var(--canvas); }
   background: #fff; border: 1px solid var(--line); border-radius: var(--r-md);
 }
 .idleCount { font-variant-numeric: tabular-nums; }
+
+/* ---- fixed rest DAYS picker ------------------------------------------- */
+/* Seven tap targets rather than a <select multiple>: on an iPad a multi-
+   select needs a long-press to pick a second option, which nobody finds. */
+.rdPick { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: 4px; }
+.rdDay {
+  display: flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 0 var(--s3);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--paper); cursor: pointer; user-select: none;
+  font-weight: 600; font-size: var(--f-sm);
+}
+.rdDay input { width: 20px; height: 20px; margin: 0; }
+.rdDay:has(input:checked) {
+  background: var(--brand-wash); border-color: var(--brand); color: var(--brand);
+}
+.rdDay:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
