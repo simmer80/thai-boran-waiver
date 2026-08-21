@@ -24,6 +24,26 @@
 .tb-navversion:hover { color: #e5e7eb; border-color: #4c5661; }
 .tb-navversion:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
 .tb-tab:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+/* WHICH PARLOR THIS TABLET FILES TO. Device identity, deliberately not a
+   control: no pointer cursor, not focusable, nothing to tap. margin-left:auto
+   pushes it and the chips after it to the right, away from the tab links, so
+   it never reads as another tab. */
+.tb-device {
+  margin-left: auto; color: #cbd5e1;
+  font: 500 12px -apple-system, sans-serif;
+  padding: 4px 10px; border: 1px solid #374151; border-radius: 999px;
+  white-space: nowrap; cursor: default; user-select: none;
+}
+.tb-device b { color: #f1f5f9; font-weight: 700; }
+/* Never set = a warning, not a quiet default. An unconfigured Airport Road
+   iPad filing everything to Panacan is the failure this exists to prevent. */
+.tb-device.unset {
+  color: #fde68a; border-color: #a16207; background: #422006; font-weight: 700;
+}
+/* The device badge already claims the auto margin; the chips after it just
+   sit alongside. */
+.tb-device ~ .tb-chip { margin-left: 0; }
+
 .tb-chip {
   margin-left: auto; color: #a7f3d0; font: 600 12px -apple-system, sans-serif;
   padding: 4px 10px; border: 1px solid #374151; border-radius: 999px;

@@ -1113,18 +1113,9 @@ function init() {
     saveAndLockPrices();
   });
 
-  // Device parlor setting (inside the manager-gated device section)
-  if (el("deviceSite") && window.TB) {
-    elx("deviceSite").value = TB.deviceSite();
-    on("deviceSite", "change", () => {
-      TB.setDeviceSite(elx("deviceSite").value);
-      const m = el("deviceSiteMsg");
-      m.textContent = elx("deviceSite").value
-        ? "Saved — new waivers from this device are stamped " + TB.siteLabel(elx("deviceSite").value) + "."
-        : "Cleared — records default to Panacan.";
-      m.style.color = "#0a7a2a";
-    });
-  }
+  // The device-parlor control moved to Manager -> Admin -> This device
+  // (backoffice.js, renderDeviceParlor). Nothing is wired here any more:
+  // there must be exactly one place that writes tb_site.
 
   on("btnClearAll", "click", async () => {
   if (!confirm("Clear all saved submissions on this iPad?")) return;

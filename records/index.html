@@ -36,19 +36,10 @@
     <div id="mgrCard" class="card hidden">
             <div class="section">
 
-        <!-- Device setting: which parlor THIS device belongs to. Waivers
-             captured here are stamped with it; the document screens default
-             to it. Manager-gated (this section unlocks via manager login or
-             the device PIN offline fallback). -->
-        <div class="row" style="gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-          <b>This device's parlor:</b>
-          <select id="deviceSite" style="font-size:16px;padding:8px;">
-            <option value="">(not set — records default to Panacan)</option>
-            <option value="panacan">Thai Boran — Panacan</option>
-            <option value="airport-road">Thai Boran — Airport Road</option>
-          </select>
-          <span id="deviceSiteMsg" class="small"></span>
-        </div>
+        <!-- The device-parlor picker that used to sit here has moved to
+             Manager -> Admin -> This device. It is manager-only there; here
+             it was reachable by anyone who could sign in, because this whole
+             block unlocks on ANY verified login. -->
         <div class="hr"></div>
 
         <div class="row" style="justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
@@ -71,32 +62,12 @@
           </div>
         </div>
 
-        <div class="tableWrap">
-          <table class="table wideTable">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Name</th>
-                <th>Date</th>
-                <th>Address</th>
-                <th>Contact</th>
-                <th>Services</th>
-                <th>Add-Ons</th>
-                <th>Therapist</th>
-                <th>Time Start</th>
-                <th>Conditions</th>
-                <th>Signature File</th>
-                <th>Photo File</th>
-                <th>Senior/PWD</th>
-                <th>PWD ID</th>
-                <th>Gross</th>
-                <th>Discount</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="historyRows"></tbody>
-          </table>
-        </div>
+        <!-- The local waiver TABLE that used to sit here is gone. The IA
+             redesign moved this whole block into Sales & history -> Waiver
+             forms, where records.js already renders the SERVER's list — so
+             the tab was showing two waiver tables, one of them this device's
+             copies only. The export and clear buttons above are what this
+             block is for now. -->
 
                 <div id="mgrMsg" class="small" style="margin-top:10px;"></div>
         </div>

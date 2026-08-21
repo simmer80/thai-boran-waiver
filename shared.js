@@ -7,6 +7,50 @@
 (function () {
   const CFG = window.TB_CONFIG || { apiBase: '', branchId: 'panacan' };
 
+  // -------------------------------------------------------- device badge
+  // WHICH PARLOR THIS TABLET FILES TO, shown on every page including the
+  // waiver form, where nobody is signed in.
+  //
+  // This is DEVICE IDENTITY, not a control: it is a static chip, it is not
+  // focusable, and it cannot be changed by tapping it. Only a manager can
+  // change it, from Manager → Admin → This device. It is deliberately not a
+  // <select>, because a receptionist tapping the wrong parlor here would
+  // misfile every waiver taken afterwards.
+  //
+  // Do not confuse it with the "Viewing" picker in the back-office bar:
+  //   this badge  = where THIS TABLET’S captured waivers are FILED
+  //   Viewing     = whose paperwork you are LOOKING AT right now
+  //
+  // Unset is shown as a WARNING rather than quietly assuming the default.
+  // An Airport Road iPad nobody configured would otherwise file every
+  // waiver to Panacan and say nothing about it.
+  function deviceBadgeHtml() {
+    const id = deviceSite();
+    if (!id) {
+      return '<span class="tb-device unset" role="status" title="A manager must set this in '
+        + 'Manager → Admin → This device">⚠ Parlor not set — filing to Panacan</span>';
+    }
+    return '<span class="tb-device" role="status">This device: <b>Thai Boran — '
+      + escapeHtml(siteLabel(id)) + '</b></span>';
+  }
+
+  // Re-read the badge after a manager changes the setting, so the change is
+  // visible immediately rather than at the next page load.
+  function refreshDeviceBadge() {
+    const bar = document.querySelector('.tb-nav');
+    const old = bar && bar.querySelector('.tb-device');
+    if (!bar || !old) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = deviceBadgeHtml();
+    bar.replaceChild(tmp.firstChild, old);
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"\']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
   // ------------------------------------------------------------ nav tabs
   // Injects the three top-level tabs on every page.
   function injectNav(active) {
@@ -28,7 +72,7 @@
       : tabs;
     bar.innerHTML = shown
       .map((t) => `<a href="${t.href}" class="tb-tab${t.id === active ? " active" : ""}${t.quiet ? " quiet" : ""}">${t.label}</a>`)
-      .join("") + `<span id="tbNetChip" class="tb-chip">...</span>`;
+      .join("") + deviceBadgeHtml() + `<span id="tbNetChip" class="tb-chip">...</span>`;
     document.body.insertBefore(bar, document.body.firstChild);
     // The back-office pages get the app canvas behind them; the waiver
     // page keeps its own cream background.
@@ -333,6 +377,7 @@
     CFG, injectNav, updateNetChip, api, login, logout, me, cachedUser, setCachedUser, showWaking,
     explain, sorry,
     SITES, deviceSite, setDeviceSite, siteLabel, refreshPrices,
+    refreshDeviceBadge, deviceBadgeHtml,
     token, setToken, cachedTherapists, refreshTherapists,
   };
 })();

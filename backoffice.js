@@ -274,7 +274,7 @@
         </div>
         <div class="boSite">
           ${mgr
-            ? `<label for="boSite">Parlor</label>
+            ? `<label for="boSite" title="Whose paperwork you are looking at. This does NOT change where this tablet files its waivers.">Viewing</label>
                <select id="boSite">
                  <option value="">— choose parlor —</option>
                  ${Object.entries(SITE_LABELS).map(([id, l]) =>
@@ -468,12 +468,83 @@
   // open at once when comparing. Sub-tabs would hide the titles behind small
   // targets and stack a second row of navigation under the one above it.
   const ADMIN_SECTIONS = [
+    { id: 'device', title: 'This device', sub: 'Which parlor THIS tablet files its waivers to',
+      body: '<div id="deviceParlorBody" class="muted">Loading…</div>', load: () => renderDeviceParlor() },
     { id: 'prices', title: 'Prices', sub: 'Shared — both parlors charge the same', body: '<div id="pricesBody" class="muted">Loading…</div>', load: () => renderPricesAdmin() },
     { id: 'tom', title: 'TOM codes', sub: 'The short code on the Main Office Daily Sales Report', body: '<div id="tomBody" class="muted">Loading…</div>', load: () => renderTomCodes() },
     { id: 'therapists', title: 'Therapists', sub: 'Shared — staff rotate between parlors', body: '<div id="thBody"></div>', load: () => renderTherapists() },
     { id: 'users', title: 'Users & passwords', sub: 'Reset a receptionist’s password', body: '<div id="usersBody"></div>', load: () => renderUsersAdmin() },
     { id: 'drive', title: 'Google Drive', sub: 'Where documents and client photos are kept', body: '<div id="driveBody" class="muted">Loading…</div>', load: () => loadDrive() },
   ];
+
+  // WHICH PARLOR THIS TABLET FILES TO.
+  //
+  // This went missing in the IA redesign: the old control lived in static
+  // markup on the records page, the new Manager tab renders from here, and
+  // nothing carried it across. Every waiver on an unconfigured tablet was
+  // therefore being filed to Panacan by the fallback in app.js.
+  //
+  // It lives in ADMIN because that is the manager-only area and this is a
+  // set-once-per-tablet job, not a daily one — and because Admin is where a
+  // manager already goes to configure things. It is FIRST in the list
+  // because until it is done the tablet is quietly filing to the wrong
+  // parlor.
+  function renderDeviceParlor() {
+    const host = $('#deviceParlorBody');
+    if (!host) return;
+    const current = TB.deviceSite();
+    host.className = '';
+    host.innerHTML = `
+      <div class="${current ? 'muted' : 'warn'}" style="margin-bottom:10px;">
+        ${current
+          ? `Waivers captured on <b>this tablet</b> are filed to
+             <b>Thai Boran — ${esc(TB.siteLabel(current))}</b>.`
+          : '<b>This tablet has no parlor set.</b> Until one is chosen, every waiver '
+            + 'captured here is filed to <b>Panacan</b> — which is wrong if this '
+            + 'tablet is at Airport Road.'}
+      </div>
+      <div class="muted" style="margin-bottom:10px;">
+        This is <b>not</b> the same as the <b>Viewing</b> picker at the top of the
+        screen. That one only changes whose paperwork you are looking at, and
+        changes nothing about the tablet. This one decides <b>where the waivers
+        taken on this tablet are filed</b>, and it stays set until a manager
+        changes it. Set it once, on each tablet, in the parlor it lives in.
+      </div>
+      <div class="row">
+        <div>
+          <label for="devParlor">This tablet is at</label>
+          <select id="devParlor">
+            <option value="">— not set —</option>
+            ${TB.SITES.map((s) => `<option value="${esc(s.id)}" ${s.id === current ? 'selected' : ''}>`
+              + `Thai Boran — ${esc(s.label)}</option>`).join('')}
+          </select>
+        </div>
+        <button id="devParlorSave" class="btn primary">Save for this tablet</button>
+        <span id="devParlorMsg" role="status"></span>
+      </div>`;
+
+    $('#devParlorSave').addEventListener('click', () => {
+      const chosen = $('#devParlor').value;
+      // Clearing it is a real choice (the manager’s own laptop has no parlor),
+      // but it must be a deliberate one, because it re-arms the silent
+      // default for anything captured here.
+      if (!chosen && !confirm('Leave this tablet with NO parlor set?\n\n'
+        + 'Any waiver captured on it would be filed to Panacan. That is right for '
+        + 'a manager\u2019s laptop, which never captures waivers, and wrong for a '
+        + 'tablet at the front desk.')) return;
+
+      TB.setDeviceSite(chosen);
+      if (TB.refreshDeviceBadge) TB.refreshDeviceBadge();
+      renderDeviceParlor();
+      const m2 = $('#devParlorMsg');
+      if (m2) {
+        m2.className = chosen ? 'ok' : 'warn';
+        m2.textContent = chosen
+          ? 'Saved. Waivers taken on this tablet now go to ' + TB.siteLabel(chosen) + '.'
+          : 'Cleared — this tablet has no parlor set.';
+      }
+    });
+  }
 
   function renderAdminSection(host) {
     host.innerHTML = `

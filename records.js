@@ -94,7 +94,7 @@
           <div class="boWhoRole">${esc(state.user.role === 'manager' || state.user.role === 'admin' ? 'Manager' : 'Front desk')}</div>
         </div>
         <div class="boSite">
-          <label for="rcSite">Parlor</label>
+          <label for="rcSite" title="Whose paperwork you are looking at. This does NOT change where this tablet files its waivers.">Viewing</label>
           <select id="rcSite">
             ${Object.entries(SITE_LABELS).map(([id, l]) =>
               `<option value="${id}" ${state.site === id ? 'selected' : ''}>${esc(l)}</option>`).join('')}
