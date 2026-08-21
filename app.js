@@ -333,6 +333,8 @@ function parseAddonsList(text) {
 //
 // 2. Only the eligible SERVICE is discounted: never a Combo, and never an
 //    add-on, whether chosen at the start or added mid-service. Which
+//    A service that is not in the price list’s seniorEligible map is NOT
+//    eligible: a discount is never the default.
 //    services qualify comes from the price list, not from this file.
 //
 // 3. THE COMMISSION BASIS IS GROSS, WHILE THE SALE TOTAL IS NET.
@@ -348,10 +350,13 @@ function parseAddonsList(text) {
 //    So a day’s takings are the sum of NET while a day’s commission is on
 //    GROSS. They coincide on every undiscounted sale, which is exactly why a
 //    mistake here would go unnoticed.
+// A MISSING OR UNMAPPED SERVICE IS NOT ELIGIBLE — mirrored from the server.
+// The earlier version returned true for an unmapped set, which is how the
+// live price list (which has no map) came to discount every Combo.
 function isSeniorEligibleService(set, serviceName) {
   const map = set && set.seniorEligible;
-  if (!map || typeof map !== 'object') return true;      // set predates the flag
-  return !!map[String(serviceName || '').trim()];
+  if (!map || typeof map !== 'object') return false;   // no map = nothing qualifies
+  return map[String(serviceName || '').trim()] === true;
 }
 
 function computePricing(dateStr, serviceName, addonsText, isSenior) {
@@ -363,6 +368,60 @@ function computePricing(dateStr, serviceName, addonsText, isSenior) {
   const eligibleBase = isSenior && isSeniorEligibleService(set, serviceName) ? servicePrice : 0;
   const discount = Math.round(eligibleBase * SENIOR_PWD_DISCOUNT_RATE);
   return { servicePrice, addonsPrice, gross, discountBase: eligibleBase, discount, net: gross - discount };
+}
+
+// Can the SERVICE currently chosen carry a Senior/PWD discount at all?
+function seniorAllowedForCurrentService() {
+  const name = el('services') ? el('services').value : '';
+  if (!String(name).trim()) return true;   // nothing chosen yet: do not pre-judge
+  return isSeniorEligibleService(pickPriceSetForDate(el('date') ? el('date').value : ''), name);
+}
+
+// Offer the Senior/PWD option ONLY when the chosen service can actually
+// carry it. Showing it for a Combo and then ignoring the selection is worse
+// than not showing it: the receptionist tells the client they have their
+// discount, and the printed total says otherwise.
+//
+// If a selection has ALREADY been made and the receptionist then switches to
+// an ineligible service, the selection is cleared and SAID OUT LOUD — a
+// silently dropped discount is how a client gets charged the wrong amount
+// while everyone believes it was applied.
+function applySeniorEligibilityUi() {
+  const wrap = el('seniorWrap');
+  const alt = el('seniorNotEligible');
+  const sel = el('senior');
+  if (!wrap || !alt || !sel) return;
+
+  const allowed = seniorAllowedForCurrentService();
+  wrap.classList.toggle('hidden', !allowed);
+  alt.classList.toggle('hidden', allowed);
+
+  if (allowed) { updateSeniorIdVisibility(); return; }
+
+  const had = sel.value === 'Yes';
+  sel.value = 'No';
+  if (el('seniorId')) el('seniorId').value = '';
+  updateSeniorIdVisibility();
+
+  const svc = el('services').value;
+  const msg = el('seniorNotEligibleMsg');
+  if (msg) {
+    msg.className = had ? 'seniorCleared' : 'small';
+    // Straight quotes only in the code; the curly ones are DATA inside the
+    // template, or the concatenation ends up inside the string literal.
+    const q = String.fromCharCode(8220) + svc + String.fromCharCode(8221);
+    msg.textContent = had
+      ? 'Senior/PWD REMOVED — ' + q + ' does not carry the 20% discount. '
+        + 'It applies to the regular one-hour massages only.'
+      : 'Not available for ' + q + ' — the 20% applies to the regular '
+        + 'one-hour massages only, never to combos or add-ons.';
+  }
+}
+
+// The ID box follows the picker, and must also disappear with it.
+function updateSeniorIdVisibility() {
+  const wrap = el('seniorIdWrap');
+  if (wrap) wrap.classList.toggle('hidden', !isSeniorSelected());
 }
 
 function isSeniorSelected() {
@@ -1238,6 +1297,14 @@ function setupEvents() {
     const e = el(id);
     if (e) { e.addEventListener('change', updateTotalPreview); e.addEventListener('input', updateTotalPreview); }
   });
+  // The eligibility of the Senior/PWD option depends on the service AND the
+  // date (an older sale is priced from an older list, which may map it
+  // differently), so it is refreshed by exactly the same triggers.
+  ['date', 'services'].forEach((id) => {
+    const e = el(id);
+    if (e) e.addEventListener('change', applySeniorEligibilityUi);
+  });
+  applySeniorEligibilityUi();
     ['c_pregnant','c_thinners','c_skin','c_bp','c_pre'].forEach((id) => el(id).addEventListener('input', () => {}));
 
   const otherBox = el('c_other');

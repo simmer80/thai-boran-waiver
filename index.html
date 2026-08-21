@@ -264,12 +264,19 @@ Monday to Friday &amp; Holidays
       </div>
 
       <div class="grid" style="margin-top:10px;">
-        <div>
+        <div id="seniorWrap">
           <label for="senior">Senior Citizen / PWD</label>
           <select id="senior">
             <option value="No" selected>No</option>
             <option value="Yes">Yes</option>
           </select>
+        </div>
+        <!-- Shown INSTEAD of the picker when the chosen service cannot carry
+             the discount, so the option is never offered-and-ignored. -->
+        <div id="seniorNotEligible" class="hidden">
+          <label>Senior Citizen / PWD</label>
+          <div class="small" id="seniorNotEligibleMsg"></div>
+        </div>
         </div>
         <div id="seniorIdWrap" class="hidden">
           <label for="seniorId">Senior / PWD ID number</label>

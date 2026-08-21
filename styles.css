@@ -93,3 +93,13 @@ video { width: 100%; height: auto; display: block; }
   transition: box-shadow 0.2s ease;
 }
 .photoSwitchHint { transition: opacity 0.15s ease; }
+
+/* The Senior/PWD option was removed because the chosen service cannot carry
+   the discount. Loud on purpose: a discount that silently disappears is how a
+   client ends up charged the wrong amount while everyone believes it applied. */
+.seniorCleared {
+  font-size: 14px; font-weight: 700; color: #7f1d1d;
+  background: #fee2e2; border: 1px solid #fecaca; border-radius: 8px;
+  padding: 8px 10px; margin-top: 4px;
+}
+#seniorNotEligible .small { color: #6b7280; }
