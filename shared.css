@@ -827,3 +827,26 @@ td[data-c="net"].negative {
   outline: 2px solid var(--bad); outline-offset: -2px;
 }
 .nhNote { font-size: 10px; font-weight: 500; color: var(--ink-3); line-height: 1.1; }
+
+/* ---- payroll: closed days ---------------------------------------------- */
+/* "C" in a day cell means the parlor did not open. Named underneath so a
+   head-office reader is never left guessing what the letter means. */
+.closedNote { font-size: 12px; color: var(--ink-2); margin: 6px 0 10px; }
+/* A day marked closed that has sales on it. Reported, never resolved: */
+.contraWarn {
+  margin: 0 0 10px; padding: 10px 12px;
+  border: 2px solid #a16207; border-radius: var(--r-md);
+  background: #fef3c7; color: #713f12; font-size: var(--f-sm);
+}
+
+/* ---- the day-s non-handler pay, on the daily report -------------------- */
+.nhDay {
+  margin: 8px 0 12px; padding: 10px 12px;
+  border: 1px solid var(--line); border-left: 4px solid var(--brand);
+  border-radius: var(--r-sm); background: var(--paper-2);
+  font-size: var(--f-sm); line-height: 1.5;
+}
+.nhDay .nhWho { font-weight: 700; margin: 4px 0; }
+.nhDay span { color: var(--ink-2); font-size: var(--f-xs); }
+.nhDay.none { border-left-color: var(--line); color: var(--ink-2); }
+.nhDay.closed { border-left-color: #a16207; background: #fef3c7; color: #713f12; }

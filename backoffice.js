@@ -359,6 +359,22 @@
   function renderToday(host) {
     if (!state.site) { host.innerHTML = needSite('the day'); return; }
     host.innerHTML = `
+      <div class="panel" id="closedPanel">
+        <div class="secHead">
+          <h2>Was the parlor open?</h2>
+          <div class="muted">If the parlor did not open — a holiday, a typhoon, any
+            reason — say so here. Nobody is paid non-handler pay for a day the shop
+            was shut. You can set this for <b>any date</b>, so a day you forgot can
+            still be corrected.</div>
+        </div>
+        <div class="row">
+          <div><label for="clDate">Date</label><input type="date" id="clDate" value="${todayISO()}" /></div>
+          <button id="clShut" class="btn">Mark as CLOSED</button>
+          <button id="clOpen" class="btn">Mark as open</button>
+          <span id="clMsg" role="status"></span>
+        </div>
+        <div id="clList" class="muted" style="margin-top:8px;"></div>
+      </div>
       <div class="panel">
         <div class="secHead">
           <h2>Today at a glance</h2>
@@ -391,6 +407,51 @@
         <div>Sessions look right?</div>
         <button id="toDocs" class="btn primary">Make today’s documents →</button>
       </div>`;
+    // CLOSED DAYS. The receptionist sets these, not only the manager: she is
+    // the one closing up, and at 9pm she is the only person who knows the shop
+    // never opened. Making it a manager-only job means the mark happens days
+    // later or not at all — and a missed one pays NH for a day nobody worked.
+    async function paintClosed() {
+      const box = $('#clList');
+      if (!box) return;
+      try {
+        const out = await TB.api('/api/closed-days?site=' + encodeURIComponent(state.site));
+        const dates = Object.keys(out.closed || {}).sort().reverse().slice(0, 8);
+        box.innerHTML = dates.length
+          ? 'Recently marked closed: ' + dates.map((d) => `<b>${esc(d)}</b>`).join(', ')
+          : 'No days are marked closed.';
+      } catch (_) { box.textContent = ''; }
+    }
+
+    async function setClosed(closed) {
+      const date = $('#clDate').value;
+      const msg = $('#clMsg');
+      if (!date) { msg.className = 'err'; msg.textContent = 'Pick a date first.'; return; }
+      if (closed && !confirm(`Mark ${date} as CLOSED?\n\n`
+        + 'Nobody will be paid non-handler pay for that day. Only do this if the '
+        + 'parlor really did not open.')) return;
+      try {
+        const reason = closed ? (prompt('Why was it closed? (holiday, typhoon, ...)', '') || '') : '';
+        const out = await TB.api('/api/closed-days/' + encodeURIComponent(date)
+          + '?site=' + encodeURIComponent(state.site), { method: 'PUT', body: { closed, reason } });
+        msg.className = out.warning ? 'warn' : 'ok';
+        // A day marked closed that already has sales is a contradiction. It is
+        // said out loud, not resolved behind her back.
+        msg.textContent = out.warning
+          ? out.warning
+          : (closed ? date + ' is marked closed — no non-handler pay for that day.'
+                    : date + ' is marked open again.');
+        paintClosed();
+      } catch (e) {
+        msg.className = 'err';
+        msg.textContent = TB.explain(e, 'mark the day').split(String.fromCharCode(10))[0];
+      }
+    }
+
+    if ($('#clShut')) $('#clShut').addEventListener('click', () => busy($('#clShut'), 'Saving…', () => setClosed(true)));
+    if ($('#clOpen')) $('#clOpen').addEventListener('click', () => busy($('#clOpen'), 'Saving…', () => setClosed(false)));
+    paintClosed();
+
     $('#fApply').addEventListener('click', loadSessions);
     $('#toDocs').addEventListener('click', () => { state.section = 'documents'; renderMain(); });
     loadSessions();

@@ -174,7 +174,19 @@
     const totalRow = `<tr class="tot"><td class="name">GRAND TOTAL</td><td></td>${'<td></td>'.repeat(span)}
       <td data-c="grandTotal">${money0(d.grandTotal)}</td></tr>`;
 
+    // THE DAY’S NON-HANDLER PAY.
+    //
+    // Shown to whoever is closing up, before she signs. The weekly payroll is
+    // what actually pays it, but she is the one who knows who was in today —
+    // so if this list looks wrong, now is when it gets said, not next week.
+    const nhBlock = !d.nh ? '' : (d.nh.closed
+      ? `<div class="nhDay closed"><b>The parlor was closed today${d.nh.closedReason ? ' — ' + esc(d.nh.closedReason) : ''}.</b> No non-handler pay is due for a day the shop did not open.</div>`
+      : (d.nh.rows.length
+        ? `<div class="nhDay"><b>Non-handler pay today: ₱${d.nh.total}</b> — ${d.nh.rows.length} therapist(s) came in and had no client:<div class="nhWho">${d.nh.rows.map((r) => esc(r.therapistName)).join(', ')}</div><span>Paid at ₱${d.nh.rate} each. It is added automatically on the weekly payroll — nobody has to remember it. If someone on this list was absent rather than idle, say so on the payroll sheet.</span></div>`
+        : `<div class="nhDay none">No non-handler pay today — every therapist who was in had at least one client.</div>`));
+
     return `${header(cfg, 'DAILY THERAPIST COMMISSION', 'Date: ' + d.date, logoSrc)}
+      ${nhBlock}
       <table>${head}${body}${totalRow}</table>
       ${footer(report, inputByOf(report), o)}`;
   }
@@ -186,13 +198,17 @@
       '<th>Gross</th>' + DED.map(([, l]) => `<th>${l}</th>`).join('') +
       '<th>Total Ded.</th><th>NH</th><th>Allow.</th><th>NET PAY</th><th>Signature</th></tr>';
 
-    const cell = (c) => (c.type === 'RD' ? 'RD' : c.type === 'A' ? 'A' : money(c.amount));
+    // C = the parlor did not open. Shown like RD and A so a head-office
+    // reader never meets an unexplained blank on a payroll sheet.
+    const cell = (c) => (c.type === 'RD' ? 'RD' : c.type === 'A' ? 'A'
+      : c.type === 'C' ? 'C' : money(c.amount));
 
     // A day is either an amount or a mark (RD/A). The mark button cycles
     // ·(amount) -> RD -> A -> · so the whole cell stays inside its column and
     // the amount box can keep a numbers-only keyboard on the iPad.
     function dayCell(kA, key, c) {
-      const mark = c.type === 'RD' ? 'RD' : c.type === 'A' ? 'A' : '';
+      const mark = c.type === 'RD' ? 'RD' : c.type === 'A' ? 'A'
+        : c.type === 'C' ? 'C' : '';
       const at = `${kA} data-d="${key}"`;
       return `<td class="ed daycell">
         ${cellInput(`${at} data-e="day"${mark ? ' disabled' : ''}`, mark ? '' : raw(c.amount), 'money', key + ' amount')}
@@ -229,6 +245,15 @@
       </tr>`;
     }).join('');
 
+    // Name the closed dates on the sheet itself: "C" alone tells head office
+    // nothing, and the reason is the whole justification for no NH that day.
+    const closedNote = (d.totals.closedDates || []).length
+      ? `<div class="closedNote noprint-keep">Parlor closed: ${d.totals.closedDates.join(', ')} — marked C, no non-handler pay for those days.</div>`
+      : '';
+    const contraNote = (d.totals.contradictions || []).length
+      ? `<div class="contraWarn" role="alert"><b>Check this:</b> ${d.totals.contradictions.map((c) => `${c.date} is marked closed but has ${c.sessions} sale(s) recorded`).join('; ')}. Either the day was not really closed, or those sales belong to another date.</div>`
+      : '';
+
     const t = d.totals;
     const totalRow = `<tr class="tot"><td class="name">TOTALS</td>
       ${DAY_KEYS.map((k) => `<td data-c="tday" data-d="${k}">${money(t.days[k])}</td>`).join('')}
@@ -241,6 +266,7 @@
       <td data-c="tnet">${money0(t.netPay)}</td><td></td></tr>`;
 
     return `${header(cfg, 'WEEKLY THERAPIST PAYROLL', `Week: ${d.dates[0]} to ${d.dates[6]}`, logoSrc)}
+      ${contraNote}${closedNote}
       <table>${head}${body}${totalRow}</table>
       ${footer(report, inputByOf(report), o)}`;
   }
