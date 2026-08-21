@@ -144,8 +144,9 @@
               The price, the booked hours and the day's totals follow automatically.
               Existing add-ons cannot be removed here.</div>
             <div class="checks" style="margin-top:8px;">
-              ${ADD_ONS.map((a) => `<label class="check">
-                <input type="checkbox" data-a="${esc(a)}" ${existing.has(a) ? 'checked disabled' : ''} /> ${esc(a)}
+              ${ADD_ONS.map((a) => `<label class="check tbCheck">
+                <input type="checkbox" data-a="${esc(a)}" ${existing.has(a) ? 'checked disabled' : ''} />
+                <span class="tbBox" aria-hidden="true"></span> ${esc(a)}
               </label>`).join('')}
             </div>
             <div class="row" style="margin-top:10px;">

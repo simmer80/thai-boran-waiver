@@ -211,37 +211,68 @@ body.tb-app { background: var(--canvas); }
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-wash);
 }
-/* CHECKBOXES MUST SHOW A TICK.
+/* CHECKBOXES: THE TICK IS DRAWN, NOT NATIVE.
 
-   `.bo input` above sets appearance:none to style text fields and selects.
-   That also strips the NATIVE rendering of a checkbox — the box drew as an
-   empty rounded rectangle and the tick glyph never appeared. accent-color
-   could not save it either: accent-color only tints a control that still has
-   its native appearance, so it was inert.
+   History, so nobody re-opens this. `.bo input` sets appearance:none so text
+   fields and selects can be styled; that also stripped the native checkbox and
+   the tick never appeared. The obvious repair — hand the native appearance
+   back and tint it with accent-color — renders correctly in Chrome and STILL
+   showed no tick on the iPad. iOS Safari could not be reproduced on the
+   development machine, so a second guess at WebKit’s behaviour would have been
+   exactly that: a guess.
 
-   Every checkbox in the back office was affected: the rest-day chips, the
-   Active toggles on both staff editors, the Senior/PWD 20% column in Prices,
-   and the mid-service add-on boxes at the front desk. The waiver form was
-   not — it is outside .bo and renders natively.
+   So the tick no longer depends on any browser drawing a control for us. The
+   real <input> is kept for semantics, keyboard and JS (.checked still works
+   everywhere) but is visually hidden; the box and the tick are a <span> we
+   draw with two borders and a rotation. That renders identically in every
+   engine because it is a rectangle and a rotated corner — nothing else.
 
-   So: hand the native appearance BACK, and let accent-color tint it. A real
-   checkbox is drawn by the OS, which is the one tick guaranteed to look
-   right on every iPad. */
-.bo input[type="checkbox"] {
-  -webkit-appearance: checkbox;
-  appearance: auto;
-  width: 24px; height: 24px; min-height: 0;
-  padding: 0; border: 0; border-radius: 0;
-  background: none;
-  accent-color: var(--brand);
-  flex: 0 0 auto;
+   VISUALLY HIDDEN, NOT display:none — the input must stay focusable and
+   operable by keyboard, and must still be found by querySelectorAll. */
+/* Specificity: `.bo label` above is (0,1,1) and beats a bare .tbCheck class,
+   which left the wrapper as display:block — measured, not assumed. Matching
+   label.tbCheck makes this (0,2,1) so it wins wherever it is used. */
+label.tbCheck, .tbCheck {
+  position: relative; display: inline-flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
 }
-/* ...and make the tick unmistakable at arm’s length, not just present. */
-.bo input[type="checkbox"]:checked { transform: scale(1.06); }
-.bo input[type="checkbox"]:focus-visible {
-  outline: 2px solid var(--brand); outline-offset: 2px; box-shadow: none;
+.tbCheck > input[type="checkbox"] {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; margin: 0; padding: 0;
+  opacity: 0;                 /* invisible, still focusable and hit-testable */
+  min-height: 0; border: 0; background: none;
+  cursor: pointer;
 }
-.bo input[type="checkbox"]:disabled { opacity: 0.55; }
+.tbBox {
+  display: inline-block;      /* an inline <span> ignores width and height */
+  box-sizing: border-box;     /* 26px INCLUDING the 2px border */
+  position: relative; flex: 0 0 auto;
+  width: 26px; height: 26px;
+  border: 2px solid #8a93a0; border-radius: 6px;
+  background: var(--paper);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+/* The tick: the bottom and right edges of a square, rotated 45 degrees. */
+.tbBox::after {
+  content: ""; position: absolute;
+  left: 8px; top: 3px; width: 7px; height: 13px;
+  border: solid #fff; border-width: 0 3px 3px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.1s ease;
+}
+.tbCheck > input:checked ~ .tbBox { background: var(--brand); border-color: var(--brand); }
+.tbCheck > input:checked ~ .tbBox::after { transform: rotate(45deg) scale(1); }
+.tbCheck > input:focus-visible ~ .tbBox {
+  outline: 3px solid var(--brand); outline-offset: 2px;
+}
+.tbCheck > input:disabled ~ .tbBox { opacity: 0.5; }
+.tbCheck:has(input:disabled) { cursor: default; }
+/* A checkbox we have NOT converted must still be visible rather than a blank
+   rounded rectangle, so give the bare control its native rendering back. */
+.bo input[type="checkbox"]:not(.tbCheck > *) {
+  -webkit-appearance: checkbox; appearance: auto;
+  width: 24px; height: 24px; min-height: 0; accent-color: var(--brand);
+}
 .bo input[type="date"] { min-width: 150px; }
 
 /* ------------------------------------------------------------- buttons */

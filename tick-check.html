@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Thai Boran — checkbox tick check</title>
+
+<!-- The REAL stylesheets, linked rather than copied, so this page can never
+     drift from what the app actually ships. If the boxes look right here,
+     they look right in the app. -->
+<link rel="stylesheet" href="./styles.css" />
+<link rel="stylesheet" href="./shared.css" />
+<style>
+  body { padding: 16px; background: #f4f6f8; }
+  .proof { max-width: 760px; margin: 0 auto; }
+  .card2 { background:#fff; border:1px solid #e3e8ee; border-radius:12px;
+           padding:16px; margin-bottom:14px; }
+  .card2 h2 { margin:0 0 10px; font-size:18px; }
+  .why { color:#5a6472; font-size:15px; margin:0 0 10px; }
+  .verdict { font-size:17px; font-weight:700; margin-bottom:6px; }
+  #tapOut { font-weight:700; margin-top:8px; }
+</style>
+</head>
+<body class="bo">
+<div class="proof">
+
+  <div class="verdict">Does every selected box show a tick?</div>
+  <p class="why">
+    A selected box should be <b>solid blue with a clear white tick</b>.
+    An unselected box should be an <b>empty outline</b>.
+    If any selected box is blue but <b>empty</b>, the fix has not worked —
+    say so and nothing else needs checking.
+  </p>
+
+  <div class="card2">
+    <h2>1. Rest-day chips</h2>
+    <p class="why">Mon, Wed and Sun are pre-selected. Tap others — the tick must
+      appear and disappear.</p>
+    <div class="rdPick" role="group" aria-label="Fixed rest days">
+      <label class="rdDay tbCheck"><input type="checkbox" checked /><span class="tbBox" aria-hidden="true"></span><span>Mon</span></label>
+      <label class="rdDay tbCheck"><input type="checkbox" /><span class="tbBox" aria-hidden="true"></span><span>Tue</span></label>
+      <label class="rdDay tbCheck"><input type="checkbox" checked /><span class="tbBox" aria-hidden="true"></span><span>Wed</span></label>
+      <label class="rdDay tbCheck"><input type="checkbox" /><span class="tbBox" aria-hidden="true"></span><span>Thu</span></label>
+      <label class="rdDay tbCheck"><input type="checkbox" /><span class="tbBox" aria-hidden="true"></span><span>Fri</span></label>
+      <label class="rdDay tbCheck"><input type="checkbox" /><span class="tbBox" aria-hidden="true"></span><span>Sat</span></label>
+      <label class="rdDay tbCheck"><input type="checkbox" checked /><span class="tbBox" aria-hidden="true"></span><span>Sun</span></label>
+    </div>
+  </div>
+
+  <div class="card2">
+    <h2>2. Active toggles</h2>
+    <div class="row">
+      <label class="tbCheck"><input type="checkbox" checked /><span class="tbBox" aria-hidden="true"></span> Active (on)</label>
+      <label class="tbCheck"><input type="checkbox" /><span class="tbBox" aria-hidden="true"></span> Active (off)</label>
+    </div>
+  </div>
+
+  <div class="card2">
+    <h2>3. Prices — the Senior/PWD 20% column</h2>
+    <p class="why">This is the one that shipped invisible. The first two are
+      greyed because that column is locked until <b>Edit prices</b> is pressed;
+      a greyed tick must still be visible.</p>
+    <div class="tableWrap"><table>
+      <thead><tr><th>Item</th><th>Type</th><th>Senior/PWD 20%</th></tr></thead>
+      <tbody>
+        <tr><td>1hr Thai Body Massage</td><td>Service</td>
+          <td><label class="tbCheck" style="justify-content:center;"><input type="checkbox" checked disabled /><span class="tbBox" aria-hidden="true"></span></label></td></tr>
+        <tr><td>Combo 3</td><td>Service</td>
+          <td><label class="tbCheck" style="justify-content:center;"><input type="checkbox" disabled /><span class="tbBox" aria-hidden="true"></span></label></td></tr>
+        <tr><td>1hr Thai Foot Massage</td><td>Service</td>
+          <td><label class="tbCheck" style="justify-content:center;"><input type="checkbox" checked /><span class="tbBox" aria-hidden="true"></span></label></td></tr>
+        <tr><td>Ventosa</td><td>Add-On</td>
+          <td style="text-align:center"><span class="muted">—</span></td></tr>
+      </tbody></table></div>
+  </div>
+
+  <div class="card2">
+    <h2>4. Front desk — mid-service add-ons</h2>
+    <div class="checks">
+      <label class="check tbCheck"><input type="checkbox" checked disabled /><span class="tbBox" aria-hidden="true"></span> Ventosa (already on the sale)</label>
+      <label class="check tbCheck"><input type="checkbox" /><span class="tbBox" aria-hidden="true"></span> Hot Stone</label>
+    </div>
+  </div>
+
+  <div class="card2">
+    <h2>5. Tap test</h2>
+    <p class="why">Tap the box below a few times.</p>
+    <label class="tbCheck" style="font-size:18px;">
+      <input type="checkbox" id="tapMe" /><span class="tbBox" aria-hidden="true"></span> Tap me
+    </label>
+    <div id="tapOut" class="muted">not tapped yet</div>
+  </div>
+
+</div>
+<script>
+  // Proves the real <input> is still the thing being toggled — the drawn box
+  // is only paint. If this counter moves, every bit of JS that reads .checked
+  // still works.
+  var n = 0;
+  var box = document.getElementById('tapMe');
+  box.addEventListener('change', function () {
+    n += 1;
+    var out = document.getElementById('tapOut');
+    out.className = box.checked ? 'ok' : 'muted';
+    out.textContent = 'tapped ' + n + ' time(s) — the checkbox now reads: '
+      + (box.checked ? 'TICKED' : 'not ticked');
+  });
+</script>
+</body>
+</html>

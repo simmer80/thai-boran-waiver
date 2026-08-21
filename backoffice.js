@@ -930,7 +930,7 @@
           </select></div>
           <div style="flex:1 1 100%;"><label>Fixed rest days</label>
             ${restDayPicker('rcERest', r.restDays || [])}</div>
-          <div><label for="rcEActive">Active</label><input id="rcEActive" type="checkbox" ${r.active !== false ? 'checked' : ''} /></div>
+          <div><label class="tbCheck"><input id="rcEActive" type="checkbox" ${r.active !== false ? 'checked' : ''} /><span class="tbBox" aria-hidden="true"></span> Active</label></div>
           <button id="rcESave" class="btn primary">Save</button>
           <button id="rcECancel" class="btn">Cancel</button>
           <span id="rcEMsg" class="err" role="alert"></span>
@@ -1504,9 +1504,10 @@
   function restDayPicker(idPrefix, chosen) {
     const on = new Set(chosen || []);
     return '<div class="rdPick" role="group" aria-label="Fixed rest days">'
-      + WEEKDAYS.map((d) => `<label class="rdDay">`
+      + WEEKDAYS.map((d) => `<label class="rdDay tbCheck">`
         + `<input type="checkbox" id="${idPrefix}-${d}" data-rd="${idPrefix}" value="${d}"`
         + `${on.has(d) ? ' checked' : ''} />`
+        + `<span class="tbBox" aria-hidden="true"></span>`
         + `<span>${d.slice(0, 3)}</span></label>`).join('')
       + '</div>';
   }
@@ -1558,7 +1559,7 @@
             ${restDayPicker('tNewRest', [])}</div>
           <div><label for="tNewRate">Commission rate (0–1, e.g. 0.4 = 40%)</label>
             <input id="tNewRate" type="number" step="0.01" min="0" max="1" value="0.4" style="width:100px" /></div>
-          <div><label for="tNewActive">Active</label><input id="tNewActive" type="checkbox" checked /></div>
+          <div><label class="tbCheck"><input id="tNewActive" type="checkbox" checked /><span class="tbBox" aria-hidden="true"></span> Active</label></div>
           <button id="tAdd" class="btn primary">Add therapist</button>
           <span id="tMsg" role="alert"></span>
         </div>
@@ -1597,7 +1598,7 @@
             ${restDayPicker('teRest', restDaysOf(t))}</div>
           <div><label for="teRate">Commission rate (0–1, e.g. 0.4 = 40%)</label>
             <input id="teRate" type="number" step="0.01" min="0" max="1" value="${t.commissionRate ?? 0}" style="width:100px" /></div>
-          <div><label for="teActive">Active</label><input id="teActive" type="checkbox" ${t.active !== false ? 'checked' : ''} /></div>
+          <div><label class="tbCheck"><input id="teActive" type="checkbox" ${t.active !== false ? 'checked' : ''} /><span class="tbBox" aria-hidden="true"></span> Active</label></div>
           <button id="teSave" class="btn primary">Save</button>
           <button id="teCancel" class="btn">Cancel</button>
           <span id="teMsg" class="err" role="alert"></span>
@@ -1773,8 +1774,10 @@
         <td><input class="prIn" data-g="${g}" data-n="${esc(n)}" type="number" step="1" min="0"
           value="${(g === 's' ? cur.services[n] : cur.addons[n]) ?? 0}" style="width:100px" disabled /></td>
         <td style="text-align:center">${g === 's'
-          ? `<input class="prSen" type="checkbox" data-n="${esc(n)}" ${eligNow[n] ? 'checked' : ''} disabled
-               aria-label="Senior/PWD discount applies to ${esc(n)}" />`
+          ? `<label class="tbCheck" style="justify-content:center;">`
+            + `<input class="prSen" type="checkbox" data-n="${esc(n)}" ${eligNow[n] ? 'checked' : ''} disabled`
+            + ` aria-label="Senior/PWD discount applies to ${esc(n)}" />`
+            + `<span class="tbBox" aria-hidden="true"></span></label>`
           : '<span class="muted" title="Add-ons are never discounted">\u2014</span>'}</td></tr>`;
       host.innerHTML = `
         <div class="muted">${seededFromDevice
