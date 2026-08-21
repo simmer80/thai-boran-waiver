@@ -472,6 +472,8 @@
     { id: 'device', title: 'This device', sub: 'Which parlor THIS tablet files its waivers to',
       body: '<div id="deviceParlorBody" class="muted">Loading…</div>', load: () => renderDeviceParlor() },
     { id: 'prices', title: 'Prices', sub: 'Shared — both parlors charge the same', body: '<div id="pricesBody" class="muted">Loading…</div>', load: () => renderPricesAdmin() },
+    { id: 'payrules', title: 'Payroll rules', sub: 'The NH (non-handler) day rate',
+      body: '<div id="payRulesBody" class="muted">Loading…</div>', load: () => renderPayrollRules() },
     { id: 'tom', title: 'TOM codes', sub: 'The short code on the Main Office Daily Sales Report', body: '<div id="tomBody" class="muted">Loading…</div>', load: () => renderTomCodes() },
     { id: 'therapists', title: 'Therapists', sub: 'Shared — staff rotate between parlors', body: '<div id="thBody"></div>', load: () => renderTherapists() },
     { id: 'receptionists', title: 'Receptionists', sub: 'The front-desk staff and their logins',
@@ -493,6 +495,56 @@
   // manager already goes to configure things. It is FIRST in the list
   // because until it is done the tablet is quietly filing to the wrong
   // parlor.
+  // THE NH DAY RATE.
+  //
+  // NH ("non-handler") is what a therapist is paid for a working day on which
+  // she got NO CLIENT AT ALL. It is worked out automatically from the session
+  // records — it used to be typed in by hand, which meant it was going to be
+  // forgotten and therapists underpaid.
+  //
+  // The rate is business data and lives in the shared org config, not in the
+  // code, so it can change without a new release.
+  async function renderPayrollRules() {
+    const host = $('#payRulesBody');
+    if (!host) return;
+    try {
+      const out = await TB.api('/api/payroll-rules');
+      host.className = '';
+      host.innerHTML = `
+        <div class="muted" style="margin-bottom:10px;">
+          <b>NH — non-handler pay.</b> A therapist who comes in on a working day
+          and gets <b>no client at all</b> is paid this much for that day. It is
+          added to her pay automatically: nobody has to remember it.
+          <div style="margin-top:6px;">It is <b>not</b> paid for a rest day, and
+          not for a day she was marked absent.</div>
+          ${out.configured ? '' : '<div class="warn" style="margin-top:6px;">'
+            + 'No rate has been set yet, so ₱100 is being used. Save it below to make it explicit.</div>'}
+        </div>
+        <div class="row">
+          <div><label for="nhRate">NH day rate</label>
+            <input id="nhRate" type="number" step="1" min="0" value="${out.nhDayRate}" style="width:120px" /></div>
+          <button id="nhSave" class="btn primary">Save</button>
+          <span id="nhMsg" role="status"></span>
+        </div>`;
+
+      $('#nhSave').addEventListener('click', () => busy($('#nhSave'), 'Saving…', async () => {
+        const v = Number($('#nhRate').value);
+        const m = $('#nhMsg');
+        if (!Number.isFinite(v) || v < 0) { m.className = 'err'; m.textContent = 'The rate must be 0 or more.'; return; }
+        try {
+          const saved = await TB.api('/api/payroll-rules', { method: 'PUT', body: { nhDayRate: v } });
+          m.className = 'ok';
+          m.textContent = `Saved — a client-less working day now pays ₱${saved.nhDayRate}.`;
+        } catch (e) {
+          m.className = 'err';
+          m.textContent = TB.explain(e, 'save the NH rate').split(String.fromCharCode(10))[0];
+        }
+      }));
+    } catch (e) {
+      host.innerHTML = `<span class="err">${esc(TB.explain(e, 'load the payroll rules').split(String.fromCharCode(10))[0])}</span>`;
+    }
+  }
+
   function renderDeviceParlor() {
     const host = $('#deviceParlorBody');
     if (!host) return;
@@ -1222,6 +1274,20 @@
       } catch (e) { TB.sorry(e, 'make the PDF'); }
     }));
     $('#aPrint').addEventListener('click', () => window.print());
+    // A payroll sheet with a negative net pay may not be submitted. The
+    // server refuses it too — this only saves the receptionist a round trip
+    // and tells her at the keyboard rather than after she has signed.
+    document.addEventListener('tb:payroll-shortfall', (e) => {
+      const btn = $('#aSubmit');
+      if (!btn) return;
+      const bad = (e.detail && e.detail.shortfalls) || [];
+      btn.disabled = bad.length > 0;
+      btn.title = bad.length
+        ? 'Correct the deductions first — ' + bad.map((s) => s.name).join(', ')
+          + ' would be paid a negative amount.'
+        : '';
+    });
+
     if ($('#aSubmit')) $('#aSubmit').addEventListener('click', () => busy($('#aSubmit'), 'Submitting…', async () => {
       // Submitting is signing. She draws her signature here and it is kept
       // with THIS version of the document, printed under "Raw data input by"

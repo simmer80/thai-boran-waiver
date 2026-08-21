@@ -809,3 +809,21 @@ label.tbCheck, .tbCheck {
   background: var(--brand-wash); border-color: var(--brand); color: var(--brand);
 }
 .rdDay:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ---- payroll: a negative net pay ---------------------------------------- */
+/* Shown as it really is, never clamped to zero: clamping would pay her zero
+   and leave the wrong deduction figure sitting in the column beside it. The
+   sheet cannot be submitted while this shows, so it can never reach an
+   approved document. */
+.shortfallWarn {
+  margin: 0 0 12px; padding: 12px 14px;
+  border: 2px solid var(--bad); border-radius: var(--r-md);
+  background: var(--bad-wash); color: var(--bad);
+  font-size: var(--f-sm); line-height: 1.45;
+}
+.shortfallWarn span { font-weight: 500; }
+td[data-c="net"].negative {
+  background: var(--bad-wash); color: var(--bad); font-weight: 800;
+  outline: 2px solid var(--bad); outline-offset: -2px;
+}
+.nhNote { font-size: 10px; font-weight: 500; color: var(--ink-3); line-height: 1.1; }

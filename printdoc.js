@@ -212,7 +212,8 @@
         : `<td>${r.deductions[k].enabled ? money0(r.deductions[k].amount) : ''}</td>`)).join('');
       const nh = o.edit
         ? `<td class="ed">${cellInput(`${kA} data-e="nh"`, r.nh.enabled ? raw(r.nh.amount) : '', 'money', 'NH')}</td>`
-        : `<td>${r.nh.enabled ? money0(r.nh.amount) : ''}</td>`;
+        : `<td>${r.nh.enabled ? money0(r.nh.amount) : ''}`
+          + `${r.nh.enabled && r.nh.days ? `<div class="nhNote">${r.nh.days}d${r.nh.manual ? ' (edited)' : ''}</div>` : ''}</td>`;
       const allow = o.edit
         ? `<td class="ed">${cellInput(`${kA} data-e="allow"`, raw(r.allowance), 'money', 'allowance')}</td>`
         : `<td>${money(r.allowance)}</td>`;
@@ -234,7 +235,8 @@
       <td data-c="tgross">${money0(t.grossPay)}</td>
       ${DED.map(([k]) => `<td data-c="tded" data-x="${k}">${money(t.deductions[k])}</td>`).join('')}
       <td data-c="ttotded">${money0(t.totalDeductions)}</td>
-      <td data-c="tnh">${money(t.nh)}</td>
+      <td data-c="tnh" title="Non-handler days: a therapist who came in and got no client at all">
+        ${money(t.nh)}${t.nhDays ? `<div class="nhNote">${t.nhDays} day${t.nhDays === 1 ? '' : 's'} × ₱${t.nhRate}</div>` : ''}</td>
       <td data-c="tallow">${money(t.allowance)}</td>
       <td data-c="tnet">${money0(t.netPay)}</td><td></td></tr>`;
 
@@ -409,8 +411,54 @@
     setCell(q(root, 'td[data-c="grandTotal"]'), money0(round2(grand)));
   }
 
+  // The therapist's name for a row key, so the warning can say WHO.
+  // The therapist's name for a row key, so the warning can say WHO. The name
+  // is the row's .name cell; the key only appears on the numeric cells, so
+  // walk up from one of those to the row it belongs to.
+  function therapistNameFor(root, key) {
+    const anchor = q(root, `td[data-c="net"][data-k="${key}"]`)
+      || q(root, `td[data-c="gross"][data-k="${key}"]`);
+    const row = anchor && anchor.closest('tr');
+    const nameCell = row && row.querySelector('td.name');
+    return (nameCell && nameCell.textContent.trim()) || key;
+  }
+
+  // The warning, and the signal the back office uses to block submitting.
+  // Rendered into the document itself so it is impossible to miss, and
+  // announced so the Submit button can refuse while it stands.
+  function showShortfalls(root, shortfalls) {
+    let box = q(root, '#payrollShortfall');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'payrollShortfall';
+      box.className = 'shortfallWarn noprint';
+      box.setAttribute('role', 'alert');
+      const table = q(root, 'table');
+      if (table && table.parentNode) table.parentNode.insertBefore(box, table);
+      else root.insertBefore(box, root.firstChild);
+    }
+    if (!shortfalls.length) {
+      box.style.display = 'none';
+      box.textContent = '';
+    } else {
+      box.style.display = '';
+      box.innerHTML = '<b>This payroll cannot be submitted yet.</b><br>'
+        + shortfalls.map((s) => `The deductions for <b>${esc(s.name)}</b> are `
+          + `<b>₱${s.shortfall}</b> more than her pay for the week.`).join('<br>')
+        + '<br><span>A therapist can never be paid a negative amount. A cash advance '
+        + 'is only ever given against what she has already earned, so check the '
+        + 'deduction figures.</span>';
+    }
+    document.dispatchEvent(new CustomEvent('tb:payroll-shortfall', { detail: { shortfalls } }));
+  }
+
   function recalcPayroll(root) {
     const tot = { days: {}, gross: 0, ded: {}, totded: 0, nh: 0, allow: 0, net: 0 };
+    // A therapist can never be paid a negative amount: cash advances are only
+    // granted against what she has already earned, so a negative means
+    // something was typed wrong. Collected AS SHE TYPES, so the mistake is
+    // caught at the keyboard rather than at submit.
+    const shortfalls = [];
     DAY_KEYS.forEach((d) => { tot.days[d] = 0; });
     DED.forEach(([k]) => { tot.ded[k] = 0; });
 
@@ -436,10 +484,17 @@
       const alEl = q(root, `input[data-e="allow"][data-k="${k}"]`);
       const allow = alEl ? round2(num(alEl.value)) : 0;
       const net = round2(gross + nh - totded + allow);
+      if (net < 0) {
+        shortfalls.push({ key: k, name: therapistNameFor(root, k), shortfall: round2(-net) });
+      }
 
       setCell(td, money0(gross));
       setCell(q(root, `td[data-c="totded"][data-k="${k}"]`), money0(totded));
-      setCell(q(root, `td[data-c="net"][data-k="${k}"]`), money0(net));
+      const netCell = q(root, `td[data-c="net"][data-k="${k}"]`);
+      setCell(netCell, money0(net));
+      // The figure is shown as it really is — never clamped to zero, which
+      // would hide the wrong number sitting in the deductions column.
+      if (netCell) netCell.classList.toggle('negative', net < 0);
 
       tot.gross = round2(tot.gross + gross);
       tot.totded = round2(tot.totded + totded);
@@ -455,6 +510,8 @@
     setCell(q(root, 'td[data-c="tnh"]'), money(tot.nh));
     setCell(q(root, 'td[data-c="tallow"]'), money(tot.allow));
     setCell(q(root, 'td[data-c="tnet"]'), money0(tot.net));
+
+    showShortfalls(root, shortfalls);
   }
 
   function recalcSales(root) {
