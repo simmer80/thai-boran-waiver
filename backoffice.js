@@ -842,9 +842,12 @@
     const inactive = list.filter((r) => r.active === false);
 
     const row = (r) => `<tr>
-      <td>${esc(r.id)}</td><td>${esc(r.name)}</td>
+      <td>${esc(r.id)}</td>
+      <td>${esc(r.name)}${r.mustChangePassword
+        ? ' <span class="muted" title="She has not chosen her own password yet.">(new)</span>'
+        : ''}</td>
       <td>${esc(SITE_LABELS[r.branch] || r.branch || '—')}</td>
-      <td>${r.mustChangePassword ? '<span class="muted">must set a password</span>' : '—'}</td>
+      <td>${(r.restDays || []).map((d) => d.slice(0, 3)).join(', ') || '—'}</td>
       <td class="row" style="gap:6px;">
         <button class="btn rcEdit" data-id="${esc(r.id)}">Edit</button>
         ${r.active === false
@@ -855,7 +858,7 @@
 
     const table = (rows, empty) => rows.length
       ? `<div class="tableWrap"><table>
-          <thead><tr><th>Username</th><th>Name</th><th>Parlor</th><th>Password</th><th></th></tr></thead>
+          <thead><tr><th>Username</th><th>Name</th><th>Parlor</th><th>Rest days</th><th></th></tr></thead>
           <tbody>${rows.map(row).join('')}</tbody></table></div>`
       : `<div class="muted">${empty}</div>`;
 
@@ -864,6 +867,9 @@
         This is the <b>same list</b> as the sign-in accounts — adding someone here
         creates the login she uses at the front desk. She chooses her own password
         the first time she signs in, so you never need to know it.
+        <div style="margin-top:6px;">Rest days here are for building the front-desk
+        rota. Unlike a therapist’s, they do not appear on any report — a
+        receptionist’s pay is not worked out from them.</div>
       </div>
       ${table(active, 'No receptionists yet. Add the first one below.')}
       ${inactive.length ? `<div style="margin-top:12px;"><b class="muted">Deactivated</b>${table(inactive, '')}</div>` : ''}
@@ -877,6 +883,8 @@
           <div><label for="rcNewBranch">Parlor</label><select id="rcNewBranch">
             ${Object.entries(SITE_LABELS).map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join('')}
           </select></div>
+          <div style="flex:1 1 100%;"><label>Fixed rest days <span class="muted">(optional)</span></label>
+            ${restDayPicker('rcNewRest', [])}</div>
           <div><label for="rcNewPw">First password <span class="muted">(she will change it)</span></label>
             <input id="rcNewPw" type="text" style="width:170px" placeholder="at least 8 characters" autocapitalize="off" /></div>
           <button id="rcAdd" class="btn primary">Add receptionist</button>
@@ -920,6 +928,8 @@
             ${Object.entries(SITE_LABELS).map(([id, l]) =>
               `<option value="${id}" ${id === r.branch ? 'selected' : ''}>${esc(l)}</option>`).join('')}
           </select></div>
+          <div style="flex:1 1 100%;"><label>Fixed rest days</label>
+            ${restDayPicker('rcERest', r.restDays || [])}</div>
           <div><label for="rcEActive">Active</label><input id="rcEActive" type="checkbox" ${r.active !== false ? 'checked' : ''} /></div>
           <button id="rcESave" class="btn primary">Save</button>
           <button id="rcECancel" class="btn">Cancel</button>
@@ -938,7 +948,8 @@
         try {
           refresh(await TB.api('/api/receptionists/' + encodeURIComponent(r.id), {
             method: 'PATCH',
-            body: { name, branch: $('#rcEBranch').value, active: $('#rcEActive').checked },
+            body: { name, branch: $('#rcEBranch').value, active: $('#rcEActive').checked,
+              restDays: readRestDayPicker('rcERest') },
           }));
           note(name + ' saved ✓');
         } catch (e) { em.textContent = TB.explain(e, 'save the receptionist').split(String.fromCharCode(10))[0]; }
@@ -970,7 +981,8 @@
       try {
         refresh(await TB.api('/api/receptionists', {
           method: 'POST',
-          body: { id, name, branch: $('#rcNewBranch').value, password: pw },
+          body: { id, name, branch: $('#rcNewBranch').value, password: pw,
+            restDays: readRestDayPicker('rcNewRest') },
         }));
         note(name + ' added ✓ — she signs in as "' + id + '" and will choose her own password.');
       } catch (e) { fail(e); }
