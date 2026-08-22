@@ -861,3 +861,57 @@ td[data-c="net"].negative {
   color: #713f12;
 }
 .backupWait .muted { color: #78500f; }
+
+/* ---- quiet tools, and the closed-day record ------------------------------ */
+/* A <details> panel that stays folded away. Closing a day happens a handful
+   of times a year; it must not compete with the day's actual work, and it
+   must not read as a question that wants answering every evening. */
+.bo .quietTool {
+  padding: 0;
+  border-color: var(--line-2);
+  background: var(--paper-2);   /* recessed against the white work panels */
+  box-shadow: none;             /* no lift: it is not one of the day's tasks */
+}
+.bo .quietTool > summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  list-style: none;
+  font-size: var(--f-sm);
+  border-radius: var(--r-md);
+  min-height: 44px;              /* a finger, not a mouse pointer */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.bo .quietTool > summary::-webkit-details-marker { display: none; }
+.bo .quietTool > summary::before {
+  content: '▸';
+  margin-right: 8px;
+  color: var(--ink-2);
+}
+.bo .quietTool[open] > summary::before { content: '▾'; }
+.bo .quietTool > summary:hover { background: var(--line-2); }
+.bo .quietBody { padding: 0 14px 14px; }
+
+/* The record itself. Accurate over pretty: this is what explains a gap in a
+   payroll sheet to head office. */
+.bo table.closedLog { width: 100%; border-collapse: collapse; font-size: var(--f-sm); }
+.bo table.closedLog th,
+.bo table.closedLog td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: top;
+}
+.bo table.closedLog th { font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+/* A closure that was taken back stays visible — the correction is part of
+   the record — but must never be mistaken for one still in force. */
+.bo table.closedLog tr.undone td { opacity: 0.62; }
+.bo table.closedLog tr.undone td:first-child b { text-decoration: line-through; }
+.bo .btn.linky {
+  padding: 2px 8px;
+  min-height: 0;
+  font-size: 12px;
+  font-weight: 500;
+}

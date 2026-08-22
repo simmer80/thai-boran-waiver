@@ -360,22 +360,37 @@
     if (!state.site) { host.innerHTML = needSite('the day'); return; }
     host.innerHTML = `
       <div id="backupBanner"></div>
-      <div class="panel" id="closedPanel">
-        <div class="secHead">
-          <h2>Was the parlor open?</h2>
-          <div class="muted">If the parlor did not open — a holiday, a typhoon, any
-            reason — say so here. Nobody is paid non-handler pay for a day the shop
-            was shut. You can set this for <b>any date</b>, so a day you forgot can
-            still be corrected.</div>
+      <!--
+        CLOSED DAYS. Deliberately a quiet, folded-away tool and NOT a question.
+
+        Every day is open. Being open is the absence of a closure, never
+        something anyone declares — asking "was the parlor open today?" every
+        evening would be a daily nag she learns to click past, and the one
+        evening it mattered she would click past that too.
+
+        So: no "mark as open" button sitting beside "mark as closed" as though
+        they were two equal answers. There is one action, closing a day, used
+        a handful of times a year. Undoing one is a correction, and lives
+        inside the history where the mistake it corrects is visible.
+      -->
+      <details class="panel quietTool" id="closedPanel">
+        <summary>
+          <b>Parlor closed?</b>
+          <span class="muted"> — mark a day the shop did not open</span>
+        </summary>
+        <div class="quietBody">
+          <div class="muted">Only needed when the parlor did not open at all — a
+            holiday, a typhoon, any reason. Nobody is paid non-handler pay for a
+            day the shop was shut. Any date can be marked, so a day that was
+            missed can still be put right.</div>
+          <div class="row" style="margin-top:10px;">
+            <div><label for="clDate">Date the shop was shut</label><input type="date" id="clDate" value="${todayISO()}" /></div>
+            <button id="clShut" class="btn">Mark this day CLOSED</button>
+            <span id="clMsg" role="status"></span>
+          </div>
+          <div id="clList" style="margin-top:14px;"></div>
         </div>
-        <div class="row">
-          <div><label for="clDate">Date</label><input type="date" id="clDate" value="${todayISO()}" /></div>
-          <button id="clShut" class="btn">Mark as CLOSED</button>
-          <button id="clOpen" class="btn">Mark as open</button>
-          <span id="clMsg" role="status"></span>
-        </div>
-        <div id="clList" class="muted" style="margin-top:8px;"></div>
-      </div>
+      </details>
       <div class="panel">
         <div class="secHead">
           <h2>Today at a glance</h2>
@@ -462,27 +477,98 @@
     // the one closing up, and at 9pm she is the only person who knows the shop
     // never opened. Making it a manager-only job means the mark happens days
     // later or not at all — and a missed one pays NH for a day nobody worked.
+    // THE RECORD OF EVERY CLOSURE, including the ones later undone.
+    //
+    // This is what explains a C on a payroll sheet to head office months
+    // afterwards, so it is built to be accurate rather than pretty: the date,
+    // the reason in the words she typed, who marked it, when, and — if it was
+    // taken back — who did that and when. An undone closure stays visible
+    // with a line through it, because a correction is part of the record too.
+    const when = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? String(iso).slice(0, 16).replace('T', ' ')
+        : d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
     async function paintClosed() {
       const box = $('#clList');
       if (!box) return;
       try {
-        const out = await TB.api('/api/closed-days?site=' + encodeURIComponent(state.site));
-        const dates = Object.keys(out.closed || {}).sort().reverse().slice(0, 8);
-        box.innerHTML = dates.length
-          ? 'Recently marked closed: ' + dates.map((d) => `<b>${esc(d)}</b>`).join(', ')
-          : 'No days are marked closed.';
-      } catch (_) { box.textContent = ''; }
+        const out = await TB.api('/api/closed-days/log?site=' + encodeURIComponent(state.site));
+        const rows = out.entries || [];
+        if (!rows.length) {
+          box.innerHTML = '<div class="muted">No day has ever been marked closed at this parlor. '
+            + 'Every day counts as open unless it appears here.</div>';
+          return;
+        }
+        box.innerHTML = `
+          <div class="muted" style="margin-bottom:6px;">Every day ever marked closed at
+            this parlor, newest first. Days that were marked and then put back are
+            shown struck through — they count as normal open days.</div>
+          <div class="tableWrap">
+            <table class="closedLog">
+              <thead><tr>
+                <th>Date shut</th><th>Reason</th><th>Marked by</th><th>Marked on</th><th>Still closed?</th>
+              </tr></thead>
+              <tbody>
+                ${rows.map((e) => {
+                  const undone = !!e.undone;
+                  return `<tr class="${undone ? 'undone' : ''}">
+                    <td><b>${esc(e.date)}</b></td>
+                    <td>${esc(e.reason || '—')}</td>
+                    <td>${esc(e.byName || e.by || '—')}</td>
+                    <td class="muted">${esc(when(e.at))}</td>
+                    <td>${undone
+                      ? `<span class="muted">Put back to open by ${esc(e.undone.byName || e.undone.by || '—')}`
+                        + `, ${esc(when(e.undone.at))}</span>`
+                      : `<b>Closed</b> <button class="btn linky" data-undo="${esc(e.date)}">undo</button>`}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+
+        // Undoing lives HERE, next to the entry it corrects, rather than as a
+        // button beside "mark as closed" — it is a correction, not the other
+        // half of a daily question.
+        box.querySelectorAll('[data-undo]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const d = b.getAttribute('data-undo');
+            if (!confirm(`Put ${d} back to a normal open day?\n\n`
+              + 'Non-handler pay will be due for that day again. The closure stays '
+              + 'in the record below, marked as undone.')) return;
+            busy(b, 'Undoing…', () => setClosed(false, d));
+          });
+        });
+      } catch (_) { box.innerHTML = ''; }
     }
 
-    async function setClosed(closed) {
-      const date = $('#clDate').value;
+    // `forDate` is passed when undoing from a row in the record; closing uses
+    // the date picker.
+    async function setClosed(closed, forDate) {
+      const date = forDate || ($('#clDate') && $('#clDate').value);
       const msg = $('#clMsg');
       if (!date) { msg.className = 'err'; msg.textContent = 'Pick a date first.'; return; }
-      if (closed && !confirm(`Mark ${date} as CLOSED?\n\n`
-        + 'Nobody will be paid non-handler pay for that day. Only do this if the '
-        + 'parlor really did not open.')) return;
+
+      let reason = '';
+      if (closed) {
+        if (!confirm(`Mark ${date} as CLOSED — the shop did not open that day?\n\n`
+          + 'Nobody will be paid non-handler pay for that day. Only do this if the '
+          + 'parlor really did not open at all.\n\n'
+          + 'A day when staff came in and simply had no clients is a NORMAL OPEN '
+          + 'DAY and must not be marked closed — they are still paid for it.')) return;
+        reason = prompt('Why was the shop shut? (holiday, typhoon, ...)\n\n'
+          + 'This is kept in the record and explains the gap to head office.', '');
+        // Cancel means cancel. An empty reason on a record whose whole job is
+        // to explain something is worse than not marking it at all.
+        if (reason === null) return;
+        reason = String(reason).trim();
+        if (!reason && !confirm('No reason given.\n\n'
+          + 'The record will show this day as closed with no explanation. Continue anyway?')) return;
+      }
+
       try {
-        const reason = closed ? (prompt('Why was it closed? (holiday, typhoon, ...)', '') || '') : '';
         const out = await TB.api('/api/closed-days/' + encodeURIComponent(date)
           + '?site=' + encodeURIComponent(state.site), { method: 'PUT', body: { closed, reason } });
         msg.className = out.warning ? 'warn' : 'ok';
@@ -491,7 +577,7 @@
         msg.textContent = out.warning
           ? out.warning
           : (closed ? date + ' is marked closed — no non-handler pay for that day.'
-                    : date + ' is marked open again.');
+                    : date + ' is a normal open day again.');
         paintClosed();
       } catch (e) {
         msg.className = 'err';
@@ -500,7 +586,6 @@
     }
 
     if ($('#clShut')) $('#clShut').addEventListener('click', () => busy($('#clShut'), 'Saving…', () => setClosed(true)));
-    if ($('#clOpen')) $('#clOpen').addEventListener('click', () => busy($('#clOpen'), 'Saving…', () => setClosed(false)));
     paintClosed();
     paintBackup();
 
