@@ -123,7 +123,11 @@
       if (!navigator.onLine) throw Object.assign(new Error('offline'), { offline: true });
       const all = await getAll();
       const unsynced = all.filter((r) => !r.synced);
-      if (!unsynced.length) { lastResult = 'nothing to sync'; return; }
+      // NOTE: no early return when there is nothing to push. The two steps
+      // below still have work to do on a tablet whose records are all synced —
+      // an image that failed to upload yesterday, and an erasure the manager
+      // made this morning. Returning here meant neither ever ran again.
+      lastResult = unsynced.length ? 'synced' : 'nothing to sync';
 
       // batch in chunks of 100
       for (let i = 0; i < unsynced.length; i += 100) {
@@ -139,11 +143,14 @@
           .map((r) => ({ ...r, synced: true, syncedAt: now }));
         if (updated.length) await putAll(updated);
       }
-      lastResult = 'synced';
 
       // Images LAST and in their own try: the records are already safely
       // on the server by this point, and nothing below may undo that.
       try { await syncMedia(); } catch (_) { /* retries on the next pass */ }
+      // ...and then the other direction: anything the manager has erased is
+      // erased HERE too. A client who asked to be forgotten must not still be
+      // sitting in this tablet's database.
+      try { await applyErasures(); } catch (_) { /* retries on the next pass */ }
     } catch (e) {
       // offline / asleep / not logged in — records stay queued, nothing lost
       lastResult = e.unauthorized ? 'not logged in' : e.offline ? 'offline' : e.message;
@@ -229,6 +236,74 @@
     return done;
   }
 
+  // ---------------------------------------------------- erasure, coming back
+  //
+  // ERASING REACHES THIS TABLET TOO.
+  //
+  // The manager erases a client's photo and signature from the server and from
+  // Google Drive. That cannot reach into this iPad's IndexedDB, where the
+  // capturing tablet still holds its own copy — so the tablet asks, every
+  // sync, about the waivers it still has images for, and deletes whatever the
+  // server says has been erased.
+  //
+  // Asking (rather than being told) is what makes an OFFLINE tablet safe: one
+  // that was switched off during the erasure simply asks when it comes back,
+  // and there is no cursor or message queue that could lose the instruction.
+  //
+  // What is left behind is deliberate: the RECORD stays, marked erased, so the
+  // waiver's own history is intact and the erasure is visible rather than
+  // looking like a capture that never happened. Only the images go.
+  function hasLocalImages(r) {
+    return !!(r.photoBlob instanceof Blob
+      || (Array.isArray(r.photoBytes) && r.photoBytes.length)
+      || (Array.isArray(r.sigBytes) && r.sigBytes.length));
+  }
+
+  function stripImages(r, what) {
+    const next = { ...r, mediaErasedAt: Date.now() };
+    if (what.photo) {
+      delete next.photoBlob;
+      delete next.photoBytes;
+      delete next.photoDataUrl;
+      next.photoErased = true;
+    }
+    if (what.signature) {
+      delete next.sigBytes;
+      delete next.sigDataUrl;
+      next.signatureErased = true;
+    }
+    return next;
+  }
+
+  async function applyErasures() {
+    const all = await getAll();
+    // Only ask about waivers whose images are actually still here. There is
+    // nothing to erase for the rest, and the list stays small.
+    const holding = all.filter(hasLocalImages);
+    if (!holding.length) return 0;
+
+    let erased = 0;
+    for (let i = 0; i < holding.length; i += 500) {
+      const chunk = holding.slice(i, i + 500);
+      const out = await TB.api('/api/sessions/erased', {
+        method: 'POST',
+        body: { ids: chunk.map((r) => r.id) },
+      });
+      const map = (out && out.erased) || {};
+      const updates = [];
+      for (const r of chunk) {
+        const what = map[r.id];
+        if (!what || (!what.photo && !what.signature)) continue;
+        updates.push(stripImages(r, what));
+      }
+      if (updates.length) {
+        await putAll(updates);
+        erased += updates.length;
+      }
+    }
+    return erased;
+  }
+
   function init() {
     // status chip lives in the nav bar
     const nav = document.querySelector('.tb-nav');
@@ -253,5 +328,6 @@
     if (navigator.onLine) setTimeout(() => syncNow(), 1500);
   }
 
-  window.TBSync = { init, syncNow, refreshChip, pendingCount, pendingMediaCount, syncMedia, toServerRecord };
+  window.TBSync = { init, syncNow, refreshChip, pendingCount, pendingMediaCount, syncMedia,
+    applyErasures, toServerRecord };
 })();

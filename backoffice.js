@@ -359,6 +359,7 @@
   function renderToday(host) {
     if (!state.site) { host.innerHTML = needSite('the day'); return; }
     host.innerHTML = `
+      <div id="backupBanner"></div>
       <div class="panel" id="closedPanel">
         <div class="secHead">
           <h2>Was the parlor open?</h2>
@@ -407,6 +408,56 @@
         <div>Sessions look right?</div>
         <button id="toDocs" class="btn primary">Make today’s documents →</button>
       </div>`;
+    // THE GOOGLE DRIVE BACKUP, ON THE SCREEN PEOPLE ACTUALLY OPEN.
+    //
+    // This used to be visible only in Admin, which means it was visible to
+    // nobody: a backlog would sit there for days because there was no reason
+    // to go and look. It belongs on Today, where the shop is run from.
+    //
+    // Nothing here is an action item. The backlog drains by itself; the
+    // banner exists so that "is everything backed up?" is a question anyone
+    // can answer at a glance, and so a long outage is noticed rather than
+    // discovered later.
+    async function paintBackup() {
+      const box = $('#backupBanner');
+      if (!box) return;
+      try {
+        const s = await TB.api('/api/drive/status');
+        if (!s.enabled || s.healthy) { box.innerHTML = ''; return; }
+        box.innerHTML = `
+          <div class="panel backupWait" role="status">
+            <b>Google Drive cannot be reached at the moment.</b>
+            <div style="margin-top:4px;">${esc(s.message)}</div>
+            <div class="muted" style="margin-top:6px;">
+              Waiting: <b>${s.documents}</b> document(s) and <b>${s.images}</b> waiver image(s).
+              Everything is saved on the server — carry on as normal.
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <button id="backupNow" class="btn">Try Google Drive now</button>
+              <span id="backupMsg" class="muted" role="status"></span>
+            </div>
+          </div>`;
+        const btn = $('#backupNow');
+        if (btn) {
+          btn.addEventListener('click', () => busy(btn, 'Trying…', async () => {
+            const msg = $('#backupMsg');
+            try {
+              await TB.api('/api/drive/retry', { method: 'POST' });
+              const after = await TB.api('/api/drive/status');
+              msg.className = after.healthy ? 'ok' : 'warn';
+              msg.textContent = after.healthy
+                ? 'Everything has now been copied to Google Drive.'
+                : `Still ${after.pending} waiting — Drive is not back yet. Nothing is lost.`;
+              if (after.healthy) paintBackup();
+            } catch (e) {
+              msg.className = 'warn';
+              msg.textContent = 'Drive is still unreachable. Nothing is lost — it will copy over by itself.';
+            }
+          }));
+        }
+      } catch (_) { box.innerHTML = ''; }
+    }
+
     // CLOSED DAYS. The receptionist sets these, not only the manager: she is
     // the one closing up, and at 9pm she is the only person who knows the shop
     // never opened. Making it a manager-only job means the mark happens days
@@ -451,6 +502,7 @@
     if ($('#clShut')) $('#clShut').addEventListener('click', () => busy($('#clShut'), 'Saving…', () => setClosed(true)));
     if ($('#clOpen')) $('#clOpen').addEventListener('click', () => busy($('#clOpen'), 'Saving…', () => setClosed(false)));
     paintClosed();
+    paintBackup();
 
     $('#fApply').addEventListener('click', loadSessions);
     $('#toDocs').addEventListener('click', () => { state.section = 'documents'; renderMain(); });

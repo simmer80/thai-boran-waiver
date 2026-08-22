@@ -257,6 +257,62 @@ stops a client picking up the iPad and reading the day's takings.
 
 **What to do:** sign in again. Nothing is lost.
 
+## A client asks us to delete their photo
+
+A manager can do this. Open **Sales & history → Waiver forms**, find the
+waiver, open it, and press **Erase photo & signature**.
+
+**What gets deleted**
+
+- The photo and signature files in Google Drive.
+- The server's record of where they were.
+- **The copy on the iPad that took the waiver.** That iPad deletes its own
+  copy the next time it syncs. It does not have to be switched on when you
+  press the button — if it is off, at home, or has no WiFi, it will delete
+  its copy as soon as it comes back online.
+
+**What is kept, on purpose**
+
+- The waiver record itself — the name, service, price and therapist. The
+  sale still has to add up at the end of the week.
+- The record is marked **erased**, so it is obvious that someone deleted the
+  images. It does not pretend the waiver never had a photo.
+- A note of who erased it and when.
+
+**The one thing we cannot undo**
+
+Photos taken before we moved to Google Drive were stored in the data
+repository, which keeps a history of every version. Those are blanked, but
+the history still holds what was saved at the time. The app tells you which
+kind you are dealing with when you press the button — if it says *permanent*,
+the images really are gone.
+
+**How long until the iPad's copy is gone?** As soon as that iPad next syncs —
+normally within a minute of it being open and online.
+
+## "Google Drive cannot be reached at the moment"
+
+This message appears at the top of the **Today** screen. It means the app
+cannot reach Google Drive right now.
+
+**Nothing is lost, and there is nothing you need to do.**
+
+- Keep taking waivers as normal. Photos and signatures are saved on the
+  server instead, and copied to Google Drive automatically as soon as Drive
+  comes back.
+- Keep making, signing and approving documents as normal. Approving still
+  works, the signed copy is still saved, and its PDF goes to Drive later.
+- The message tells you how many things are waiting. The number goes down on
+  its own — you do not have to press anything.
+- It can last minutes or days. It makes no difference to the shop.
+
+There is a **Try Google Drive now** button if you want to see it happen, but
+the app does this by itself anyway.
+
+**When should you tell Alberto?** If the message is still there after two
+days, send him a message. Everything is still safe — it just means something
+needs fixing at his end.
+
 ## A document will not send
 
 The message says what is wrong. The usual ones:

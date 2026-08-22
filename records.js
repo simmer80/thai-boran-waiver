@@ -692,8 +692,26 @@
     const erase = $('#wErase');
     if (erase) {
       erase.addEventListener('click', () => busy(erase, 'Erasing…', async () => {
-        if (!confirm(`Permanently erase the photo and signature for ${rec.customer}?\n\n`
-          + 'This cannot be undone. The rest of the waiver record is kept.')) return;
+        // SAY EXACTLY WHAT HAPPENS. A manager doing this has usually been
+        // asked by a client to delete their photo, and has to be able to
+        // answer them honestly — including about the one place the app
+        // cannot reach.
+        if (!confirm(`Erase the photo and signature for ${rec.customer}?\n\n`
+          + 'WILL BE DELETED\n'
+          + '• the image files in Google Drive\n'
+          + '• the server’s record of where they were\n'
+          + '• the copy held on the iPad that captured this waiver, the next\n'
+          + '   time that iPad syncs (it does not have to be switched on now)\n\n'
+          + 'WILL BE KEPT\n'
+          + '• the waiver record itself — name, service, price, therapist —\n'
+          + '   marked as erased, so the deletion is visible rather than\n'
+          + '   looking like a waiver that never had a photo\n'
+          + '• a note of who erased it and when\n\n'
+          + 'CANNOT BE REACHED\n'
+          + '• images committed to the data repository before the Google Drive\n'
+          + '   changeover: those are blanked, but the repository’s history\n'
+          + '   still holds what was committed\n\n'
+          + 'This cannot be undone. Continue?')) return;
         try {
           const q = new URLSearchParams({ site: state.site, date: rec.date, kinds: 'photo,signature' });
           const out = await TB.api(`/api/sessions/${encodeURIComponent(rec.id)}/media?` + q.toString(),
@@ -709,9 +727,12 @@
           if (m2) {
             m2.className = out.irreversible ? 'ok' : 'warn';
             m2.textContent = out.irreversible
-              ? 'Erased permanently — the images are gone from Google Drive.'
-              : 'Erased from the app, but these images were still in the data repository, '
-                + 'whose history keeps every version. Switch on the Drive mirror for a true erase.';
+              ? 'Erased permanently — the images are gone from Google Drive. The iPad that '
+                + 'captured this waiver will delete its own copy the next time it syncs.'
+              : 'Erased from the app, and the capturing iPad will delete its copy on its next '
+                + 'sync. But these images were still in the data repository, whose history keeps '
+                + 'every version — so they are blanked rather than truly gone. Switch on the '
+                + 'Drive mirror for a true erase.';
           }
         } catch (e) {
           alert(TB.explain(e, 'erase the images').split(String.fromCharCode(10))[0]);

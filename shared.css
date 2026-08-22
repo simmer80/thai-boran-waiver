@@ -850,3 +850,14 @@ td[data-c="net"].negative {
 .nhDay span { color: var(--ink-2); font-size: var(--f-xs); }
 .nhDay.none { border-left-color: var(--line); color: var(--ink-2); }
 .nhDay.closed { border-left-color: #a16207; background: #fef3c7; color: #713f12; }
+
+/* ---- Google Drive backlog ------------------------------------------------ */
+/* Shown on Today when Drive cannot be reached. Amber, not red: nothing is
+   wrong that staff need to fix, and nothing is lost — but a backlog that
+   lasts days should be noticed rather than discovered later. */
+.backupWait {
+  border: 2px solid #a16207;
+  background: #fef3c7;
+  color: #713f12;
+}
+.backupWait .muted { color: #78500f; }

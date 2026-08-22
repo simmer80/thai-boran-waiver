@@ -14,7 +14,7 @@
 // Nothing here ever touches IndexedDB, so captured waivers and anything not
 // yet synced survive an update untouched — only the cached app files change.
 
-const BUILD = '2026.08.21-07';
+const BUILD = '2026.08.22-01';
 const CACHE_NAME = 'thai-boran-waiver-' + BUILD;
 
 // The app cannot work offline without these, so a failure to cache them
